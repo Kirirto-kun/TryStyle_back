@@ -15,8 +15,8 @@ services:
     environment:
       DATABASE_URL: postgresql://fastapi:secret@db:5432/fastapidb
     depends_on: [db]
-    expose:
-      - "8000"        # внутренний порт
+    ports:
+      - "8000:8000"    # host:container
     restart: always
 
 volumes:
