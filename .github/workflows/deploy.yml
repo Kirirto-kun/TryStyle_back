@@ -16,13 +16,8 @@ jobs:
     - name: Set up SSH key for deployment
       uses: webfactory/ssh-agent@v0.5.3
       with:
-        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}  # использует секрет из GitHub
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}  # Использует секретный ключ из GitHub Secrets
 
     - name: Deploy to server
       run: |
-        ssh -o StrictHostKeyChecking=no deploy@<server_ip> << 'EOF'
-          cd /srv/fastapi || exit  # переходим в каталог с проектом
-          git pull origin main || exit  # забираем последние изменения из репозитория
-          docker compose pull || exit  # обновляем образы
-          docker compose up -d --remove-orphans || exit  # перезапускаем контейнеры
-        EOF
+        ssh -o StrictHostKeyChecking=no deploy@<server_ip> "cd /srv/fastapi && git pull origin main && docker compose pull && docker compose up -d --remove-orphans"
