@@ -20,4 +20,4 @@ jobs:
 
     - name: Deploy to server
       run: |
-        ssh -o StrictHostKeyChecking=no root@24.199.93.73 "cd /srv/fastapi && git pull origin main && docker compose pull && docker compose up -d --remove-orphans"
+        ssh -o StrictHostKeyChecking=no root@24.199.93.73 "cd /srv/fastapi/ClosetMind_back && git pull origin main && docker compose pull && docker compose up -d --remove-orphans"
