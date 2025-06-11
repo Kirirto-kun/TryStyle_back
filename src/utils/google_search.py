@@ -10,7 +10,9 @@ headers = {
   'X-API-KEY': os.getenv('GOOGLE_SERPER_API_KEY'),
   'Content-Type': 'application/json'
 }
+
 conn = http.client.HTTPSConnection("google.serper.dev")
+
 async def google_lens_search(image_url: str, location: str = "Almaty, Almaty Province, Kazakhstan", gl: str = "kz", hl: str = "ru"):
     global conn, headers
     payload = json.dumps({
