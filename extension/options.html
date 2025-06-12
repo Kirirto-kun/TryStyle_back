@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ClosetMind Extension Settings</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 16px;
+      }
+      label {
+        display: block;
+        margin-top: 12px;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+        margin-top: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>ClosetMind Extension</h2>
+    <label>
+      ClosetMind API base URL (e.g., http://localhost:8000):
+      <input id="api" type="text" />
+    </label>
+
+    <label>
+      JWT Token:
+      <input id="token" type="text" />
+    </label>
+
+    <button id="save">Save</button>
+
+    <script src="options.js"></script>
+  </body>
+</html> 
