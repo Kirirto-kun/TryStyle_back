@@ -4,6 +4,9 @@ from typing import Any
 
 import firebase_admin
 from firebase_admin import credentials, storage
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # 1) explicit env var wins
 # 2) fallback to common default path used in docker-compose (/code/firebase-creds.json)
