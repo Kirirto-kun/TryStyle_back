@@ -12,7 +12,7 @@ from src.schemas.user import TokenData
 # Настройки JWT
 SECRET_KEY = "your-secret-key-here"  # В продакшене используйте безопасный ключ
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 1000000
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
