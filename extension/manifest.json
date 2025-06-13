@@ -6,17 +6,30 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "http://localhost:8000/*",
-    "https://your-domain.com/*"
+    "https://your-domain.com/*",
+    "https://www.closetmind.studio/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "ClosetMind Uploader"
+    "default_title": "ClosetMind Uploader",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
   },
   "options_page": "options.html",
   "content_scripts": [
