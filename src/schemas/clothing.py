@@ -15,3 +15,6 @@ class ClothingItemResponse(ClothingItemBase):
 
     class Config:
         from_attributes = True 
+
+class PhotoUpload(BaseModel):
+    image_base64: str

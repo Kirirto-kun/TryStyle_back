@@ -1,28 +1,56 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+import base64
+import uuid
 from src.database import get_db
 from src.models.clothing import ClothingItem
 from src.models.user import User
 from src.schemas.clothing import ClothingItemCreate, ClothingItemResponse
 from src.utils.auth import get_current_user
+from src.utils.firebase_storage import upload_image_to_firebase
+from src.schemas.clothing import PhotoUpload
 
 router = APIRouter(prefix="/wardrobe", tags=["wardrobe"])
 
-@router.post("/items", response_model=ClothingItemResponse)
-async def create_clothing_item(
-    item: ClothingItemCreate,
+@router.post("/items", response_model=List[ClothingItemResponse])
+async def create_clothing_items(
+    photos: List[PhotoUpload],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    db_item = ClothingItem(
-        **item.model_dump(),
-        user_id=current_user.id
-    )
-    db.add(db_item)
+    created_items = []
+    
+    for photo in photos:
+        try:
+            # Decode base64 image
+            img_bytes = base64.b64decode(photo.image_base64.split(",")[-1])
+            
+            # Upload to Firebase Storage
+            file_name = f"{uuid.uuid4()}.png"
+            image_url = upload_image_to_firebase(img_bytes, file_name)
+            
+            # Create database entry
+            db_item = ClothingItem(
+                name="",  # Empty name as per requirements
+                image_url=image_url,
+                features={},  # Empty features as per requirements
+                user_id=current_user.id
+            )
+            db.add(db_item)
+            created_items.append(db_item)
+            
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to process image: {str(e)}"
+            )
+    
     db.commit()
-    db.refresh(db_item)
-    return db_item
+    for item in created_items:
+        db.refresh(item)
+    
+    return created_items
 
 @router.get("/items", response_model=List[ClothingItemResponse])
 async def get_my_clothing_items(
