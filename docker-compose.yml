@@ -16,12 +16,8 @@ services:
     build: .
     ports:
       - "8000:8000"
-    volumes:
-      - ./  :/code/firebase-creds.json:ro
     environment:
       DATABASE_URL: postgresql://fastapi:secret@db:5432/fastapidb
-      FIREBASE_CREDENTIALS: /code/firebase-creds.json
-      FIREBASE_STORAGE_BUCKET: onaitabu.firebasestorage.app
     depends_on:
       - db
     restart: always
