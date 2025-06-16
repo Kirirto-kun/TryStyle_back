@@ -58,28 +58,10 @@ async def upload_screenshot(
     try:
         image_url = upload_image_to_firebase(img_bytes, file_name)
     except Exception as e:
-        # Firebase failed. Fallback to local storage so user flow does not break.
-        fallback_dir = os.environ.get("SCREENSHOTS_DIR", "data/test/screenshots")
-        os.makedirs(fallback_dir, exist_ok=True)
-        local_path = os.path.join(fallback_dir, file_name)
-
-        try:
-            with open(local_path, "wb") as f:
-                f.write(img_bytes)
-            image_url = f"/static/screenshots/{file_name}"
-            # Log the issue for debugging but continue.
-            print(
-                "[Waitlist] Firebase upload failed; stored screenshot locally at",
-                local_path,
-                "error:",
-                e,
-            )
-        except Exception as file_err:
-            # If even local storage fails, report error.
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to save screenshot locally after Firebase error: {file_err}",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save screenshot to Firebase: {e}",
+        )
 
     db_item = WaitListItem(image_url=image_url, user_id=current_user.id)
     db.add(db_item)

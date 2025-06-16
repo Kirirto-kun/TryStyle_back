@@ -9,7 +9,10 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from src.database import Base
-from src.models.user import User  # Импортируем все модели
+from src.models.user import User
+from src.models.clothing import ClothingItem
+from src.models.waitlist import WaitListItem
+from src.models.chat import Chat, Message  # Импортируем все модели
 
 config = context.config
 

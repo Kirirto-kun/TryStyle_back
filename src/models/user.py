@@ -18,4 +18,7 @@ class User(Base):
     clothing_items = relationship("ClothingItem", back_populates="user")
 
     # Relationship with WaitListItem
-    waitlist_items = relationship("WaitListItem", back_populates="user") 
+    waitlist_items = relationship("WaitListItem", back_populates="user")
+    
+    # Relationship with Chat
+    chats = relationship("Chat", back_populates="user", cascade="all, delete-orphan") 
