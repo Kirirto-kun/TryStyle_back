@@ -10,6 +10,7 @@ from src.schemas.clothing import ClothingItemCreate, ClothingItemResponse
 from src.utils.auth import get_current_user
 from src.utils.firebase_storage import upload_image_to_firebase
 from src.schemas.clothing import PhotoUpload
+from src.utils.analyze_image import analyze_image
 
 router = APIRouter(prefix="/wardrobe", tags=["wardrobe"])
 
@@ -30,11 +31,15 @@ async def create_clothing_items(
             file_name = f"{uuid.uuid4()}.png"
             image_url = upload_image_to_firebase(img_bytes, file_name)
             
+            # Analyze image using Azure OpenAI
+            analysis = await analyze_image(image_url)
+            
             # Create database entry
             db_item = ClothingItem(
-                name="",  # Empty name as per requirements
+                name=analysis["category"],  # Use category as name
                 image_url=image_url,
-                features={},  # Empty features as per requirements
+                category=analysis["category"],
+                features=analysis["features"],
                 user_id=current_user.id
             )
             db.add(db_item)

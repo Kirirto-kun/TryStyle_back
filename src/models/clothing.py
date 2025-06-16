@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON, ARRAY
 from sqlalchemy.orm import relationship
 from src.database import Base
 
@@ -8,7 +8,8 @@ class ClothingItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     image_url = Column(String, nullable=False)
-    features = Column(JSON, default={})
+    category = Column(String, nullable=False)
+    features = Column(ARRAY(String), default=[])
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 
     # Relationship with User

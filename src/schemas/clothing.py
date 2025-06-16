@@ -1,10 +1,11 @@
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional, List
 
 class ClothingItemBase(BaseModel):
     name: str
     image_url: str
-    features: Optional[Dict] = {}
+    category: str
+    features: List[str] = []
 
 class ClothingItemCreate(ClothingItemBase):
     pass
