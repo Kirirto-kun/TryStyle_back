@@ -36,7 +36,7 @@ async def create_clothing_items(
             
             # Create database entry
             db_item = ClothingItem(
-                name=analysis["category"],  # Use category as name
+                name=analysis["name"],  # Use the name from analysis
                 image_url=image_url,
                 category=analysis["category"],
                 features=analysis["features"],

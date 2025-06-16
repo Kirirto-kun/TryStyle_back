@@ -1,5 +1,5 @@
 import os, json, asyncio
-from openai import AsyncAzureOpenAI        # Changed to AsyncAzureOpenAI
+from openai import AsyncAzureOpenAI        
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,6 +18,7 @@ You are a fashion attribute extractor.
 Return **ONLY** a valid JSON object shaped exactly like:
 
 {
+  "name": "<name of the garment>",
   "category": "<primary garment category, lowercase English single word>",
   "features": [
     "<salient attribute 1>",
