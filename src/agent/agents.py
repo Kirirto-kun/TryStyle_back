@@ -284,6 +284,7 @@ async def get_user_wardrobe(user_id: int) -> str:
                 'id': item.id,
                 'name': item.name,
                 'image_url': item.image_url,
+                'category': item.category,
                 'features': item.features
             })
         
