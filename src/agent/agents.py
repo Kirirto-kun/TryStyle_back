@@ -328,7 +328,7 @@ coordinator_agent = LlmAgent(
     2. If the user has general questions, wants to chat, or needs basic information that doesn't require web search,
        transfer to GeneralQueryAgent using: "I'll help you with that general question. Let me transfer this to the GeneralQueryAgent."
 
-    3. If the user wants outfit recommendations or asks about creating outfits from their wardrobe,
+    3. If the user wants outfit recommendations or asks about creating outfits from their wardrobe, or just wants to ask something about their wardrobe,
        transfer to OutfitRecommendationAgent using: "I'll help you create an outfit from your wardrobe. Let me transfer this to the OutfitRecommendationAgent."
 
     Always transfer to the appropriate sub-agent based on the request type. Do not try to handle requests yourself.""",
