@@ -5,7 +5,7 @@ import os
 
 SQLALCHEMY_DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://fastapi:secret@db:5432/fastapidb"
+    "postgresql://postgres:secret@db:5432/fastapidb"
 )
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
