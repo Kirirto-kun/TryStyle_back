@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import AsyncGenerator, List, Dict, Any
 from google.adk.agents import LlmAgent, SequentialAgent, BaseAgent
-from google.adk.tools import FunctionTool
+from google.adk.tools import FunctionTool, ToolContext
 from google.adk.events import Event, EventActions
 from google.adk.agents.invocation_context import InvocationContext
 from src.utils.google_search import google_search, google_lens_search
@@ -264,17 +264,16 @@ general_query_agent = LlmAgent(
     output_key="general_response"
 )
 
-async def get_user_wardrobe(user_id: int) -> str:
+async def get_user_wardrobe(tool_context: ToolContext) -> str:
     """
-    Retrieves all clothing items from user's wardrobe.
-    
-    Args:
-        user_id: ID of the user
-        
-    Returns:
-        JSON string containing user's clothing items
+    Retrieves all clothing items from the authenticated user's wardrobe.
+    The user is identified from the session context.
     """
     try:
+        user_id = tool_context.session.state.get("user_id")
+        if not user_id:
+            return json.dumps({'status': 'error', 'message': 'User not authenticated or user_id not in session state.'})
+
         db = SessionLocal()
         items = db.query(ClothingItem).filter(ClothingItem.user_id == user_id).all()
         
@@ -302,16 +301,14 @@ outfit_agent = LlmAgent(
     name="OutfitRecommendationAgent",
     model="gemini-2.0-pro",
     description="Agent that creates outfit recommendations from user's wardrobe",
-    instruction="""You are a fashion expert that creates outfit recommendations. When given a user's request:
-    1. First check if the user is authenticated
-    2. Access the user's wardrobe using get_wardrobe_tool
-    3. Based on the user's request and available items, create outfit combinations
-    4. Return a well-formatted response with:
-       - A description of the outfit
-       - Links to each clothing item's image
-       - Brief explanation of why these items work together\
-    5. If user want to add something in their wardrobe 
-    If the user is not authenticated, inform them they need to log in first.""",
+    instruction="""You are a fashion expert that creates outfit recommendations. When a user asks for an outfit:
+    1. Access the user's wardrobe using the `get_wardrobe_tool` to see their clothing items.
+    2. Based on the user's request and available items, create one or more outfit combinations.
+    3. Return a well-formatted response with:
+       - A description of the outfit.
+       - Links to each clothing item's image.
+       - A brief explanation of why these items work together.
+    If the wardrobe is empty or no suitable outfits can be made, inform the user.""",
     tools=[get_wardrobe_tool],
     output_key="outfit_recommendation"
 )
@@ -340,12 +337,13 @@ coordinator_agent = LlmAgent(
 root_agent = coordinator_agent
 
 
-async def process_user_request(message: str) -> str:
+async def process_user_request(message: str, user_id: int) -> str:
     """
     Process user request through the multi-agent system.
     
     Args:
         message: User's message/request
+        user_id: The ID of the authenticated user.
         
     Returns:
         Response from the appropriate agent
@@ -356,24 +354,30 @@ async def process_user_request(message: str) -> str:
         # low-level details for us (session service, invocation IDs, context
         # creation, etc.).
 
-        from google.adk.sessions import InMemorySessionService
+        from google.adk.sessions import InMemorySessionService, Session
         from google.adk.runners import Runner
         from google.genai import types
 
         # Simple in-memory session service for this example.
         session_service = InMemorySessionService()
 
-        # Ensure a session exists (Runner does **not** auto-create sessions)
+        # Ensure a session exists and has the user_id in its state
         try:
+            session = await session_service.get_session(
+                app_name="ClosetMind",
+                user_id="user_closetmind",
+                session_id="session_closetmind",
+            )
+            session.state["user_id"] = user_id
+            await session_service.update_session(session)
+        except Exception:
+            # Session does not exist, create it.
             await session_service.create_session(
                 app_name="ClosetMind",
                 user_id="user_closetmind",
                 session_id="session_closetmind",
-                state={},  # start with empty state; agents can populate it later
+                state={"user_id": user_id},
             )
-        except Exception:
-            # If the session already exists, ignore the error
-            pass
 
         # Initialize the runner with our root agent and session service.
         runner = Runner(agent=root_agent, session_service=session_service, app_name="ClosetMind")

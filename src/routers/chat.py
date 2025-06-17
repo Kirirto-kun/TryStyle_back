@@ -14,7 +14,7 @@ from src.schemas.chat import (
     SendMessageRequest
 )
 from src.utils.auth import get_current_user
-from src.agent.agent import process_user_request
+from src.agent.agents import process_user_request
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
@@ -104,10 +104,7 @@ async def send_message(
         db.refresh(user_message)
         
         # Process message through AI agent
-        user_context = f"[User ID: {current_user.id}, Chat ID: {chat_id}]"
-        full_message = user_context + "\n\n" + request.message
-        
-        ai_response = await process_user_request(full_message)
+        ai_response = await process_user_request(request.message, current_user.id)
         
         # Save AI response
         ai_message = Message(
