@@ -144,7 +144,7 @@ async def extract_key_info(scraped_data_json: str) -> str:
         # Lazy import of generative model to avoid heavy import at module load
         from google.genai import GenerativeModel
 
-        model = GenerativeModel("gemini-2.0-pro")
+        model = GenerativeModel("gemini-2.5-pro-preview-06-05")
 
         for item in scraped_data['scraped_data']:
             if item['status'] != 'success' or not item['content']:
@@ -198,7 +198,7 @@ extract_info_tool = FunctionTool(func=extract_key_info)
 # Step 1: Search Agent - Finds data on the internet
 search_agent = LlmAgent(
     name="SearchAgent",
-    model="gemini-2.0-pro",
+    model="gemini-2.5-pro-preview-06-05",
     description="Agent that searches the internet using Google Search or Google Lens",
     instruction="""You are a search specialist. When given a search query, use the search_web tool to find relevant links. 
     If given an image URL, use the search_by_image tool instead. Return the results in JSON format with all found links.""",
@@ -209,7 +209,7 @@ search_agent = LlmAgent(
 # Step 2: Scraping Agent - Scrapes websites from found links
 scraping_agent = LlmAgent(
     name="ScrapingAgent", 
-    model="gemini-2.0-pro",
+    model="gemini-2.5-pro-preview-06-05",
     description="Agent that scrapes websites and converts them to markdown",
     instruction="""You are a web scraping specialist. Take the search results from the previous step and use the scrape_websites tool 
     to get the markdown content of each website. Focus on the most relevant links.""",
@@ -220,7 +220,7 @@ scraping_agent = LlmAgent(
 # Step 3: Extraction Agent - Extracts key information using LLM
 extraction_agent = LlmAgent(
     name="ExtractionAgent",
-    model="gemini-2.0-pro", 
+    model="gemini-2.5-pro-preview-06-05", 
     description="Agent that extracts key information from scraped content",
     instruction="""You are a data extraction specialist. Take the scraped content and use the extract_info_tool to find:
     - Product/item names
@@ -235,7 +235,7 @@ extraction_agent = LlmAgent(
 # Step 4: Response Agent - Formats the final response
 response_agent = LlmAgent(
     name="ResponseAgent",
-    model="gemini-2.0-pro",
+    model="gemini-2.5-pro-preview-06-05",
     description="Agent that formats the final response for the user",
     instruction="""You are a response formatter. Take all the extracted data and create a well-formatted, 
     user-friendly response that includes:
@@ -256,7 +256,7 @@ search_processing_agent = SequentialAgent(
 # Simple General Query Agent
 general_query_agent = LlmAgent(
     name="GeneralQueryAgent",
-    model="gemini-2.0-pro",
+    model="gemini-2.5-pro-preview-06-05",
     description="Agent that handles general questions and conversations",
     instruction="""You are a helpful assistant that answers general questions and engages in conversation. 
     Provide accurate, helpful, and friendly responses to user queries. If the user asks about searching for products 
@@ -299,7 +299,7 @@ get_wardrobe_tool = FunctionTool(func=get_user_wardrobe)
 # Outfit Recommendation Agent
 outfit_agent = LlmAgent(
     name="OutfitRecommendationAgent",
-    model="gemini-2.0-pro",
+    model="gemini-2.5-pro-preview-06-05",
     description="Agent that creates outfit recommendations from user's wardrobe",
     instruction="""You are a fashion expert that creates outfit recommendations. When a user asks for an outfit:
     1. Access the user's wardrobe using the `get_wardrobe_tool` to see their clothing items.
@@ -316,7 +316,7 @@ outfit_agent = LlmAgent(
 # Coordinator Agent (Root Agent)
 coordinator_agent = LlmAgent(
     name="CoordinatorAgent",
-    model="gemini-2.0-pro",
+    model="gemini-2.5-pro-preview-06-05",
     description="Main coordinator that routes requests to appropriate sub-agents",
     instruction="""You are the main coordinator. Analyze user requests and decide which agent to use:
 
