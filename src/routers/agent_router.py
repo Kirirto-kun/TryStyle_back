@@ -27,11 +27,11 @@ async def chat(
     - search: for web search and data extraction
     """
     try:
-        # Add user context to the message
-        user_context = f"[User ID: {current_user.id}] "
-        full_message = user_context + "\n\n" + request.message
-        
-        response = await process_user_request(full_message)
+        # Pass user_id directly to the agent
+        response = await process_user_request(
+            message=request.message, 
+            user_id=current_user.id
+        )
         return {"response": response}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

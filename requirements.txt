@@ -150,3 +150,9 @@ xxhash==3.5.0
 yarl==1.20.0
 zipp==3.22.0
 firebase-admin
+google-search-results
+markdownify
+pydantic-ai
+google-generativeai
+azure-identity
+azure-ai-ml
