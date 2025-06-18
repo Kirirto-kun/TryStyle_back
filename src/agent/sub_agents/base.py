@@ -1,12 +1,43 @@
 import os
-from typing import Union
+from typing import Union, List
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.azure import AzureProvider
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 
 # Load environment variables
 load_dotenv()
+
+# Message History Model
+class MessageHistory(BaseModel):
+    """Model for chat message history."""
+    messages: List[dict] = Field(
+        default_factory=list,
+        description="List of previous messages in the conversation"
+    )
+
+    def to_pydantic_ai_messages(self) -> List[ModelMessage]:
+        """Convert database messages to PydanticAI message format."""
+        pydantic_messages = []
+        for msg in self.messages:
+            if msg["role"] == "user":
+                pydantic_messages.append(
+                    ModelRequest(
+                        parts=[
+                            UserPromptPart(content=msg["content"])
+                        ]
+                    )
+                )
+            else:  # assistant
+                pydantic_messages.append(
+                    ModelResponse(
+                        parts=[
+                            TextPart(content=msg["content"])
+                        ]
+                    )
+                )
+        return pydantic_messages
 
 
 # Shared Pydantic Models

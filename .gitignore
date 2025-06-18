@@ -194,3 +194,5 @@ cython_debug/
 .cursorindexingignore
 
 onaitabu-firebase-adminsdk-fbsvc-6f0734b19c.json
+
+src/utils/gpt_image_1.py

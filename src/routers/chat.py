@@ -103,8 +103,13 @@ async def send_message(
         db.commit()
         db.refresh(user_message)
         
-        # Process message through AI agent
-        ai_response = await process_user_request(request.message, current_user.id)
+        # Process message through AI agent with chat history
+        ai_response = await process_user_request(
+            request.message,
+            current_user.id,
+            db=db,
+            chat_id=chat_id
+        )
         
         # Save AI response
         ai_message = Message(

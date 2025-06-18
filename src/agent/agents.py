@@ -1,8 +1,14 @@
 import json
+from sqlalchemy.orm import Session
 from src.agent.sub_agents.coordinator_agent import coordinate_request
 
 
-async def process_user_request(message: str, user_id: int) -> str:
+async def process_user_request(
+    message: str,
+    user_id: int,
+    db: Session,
+    chat_id: int
+) -> str:
     """
     Processes a user's request using the multi-agent system with specialized sub-agents.
 
@@ -10,21 +16,23 @@ async def process_user_request(message: str, user_id: int) -> str:
     - SearchAgent for product search requests
     - OutfitAgent for outfit recommendations  
     - GeneralAgent for general conversation
-
+    
     Args:
         message: The user's message/request.
         user_id: The ID of the authenticated user.
-
+        db: Database session for accessing chat history.
+        chat_id: ID of the current chat.
+        
     Returns:
         A JSON string containing the agent's final response.
     """
     try:
-        # Use the coordinator to handle the request
-        response = await coordinate_request(message, user_id)
-        
+        # Use the coordinator to handle the request with chat history
+        response = await coordinate_request(message, user_id, db, chat_id)
+
         # Format and return the response
         return response.model_dump_json(indent=2)
-
+        
     except Exception as e:
         print(f"An error occurred while processing the request: {e}")
         return json.dumps({"error": f"An error occurred: {str(e)}"}, indent=2)
