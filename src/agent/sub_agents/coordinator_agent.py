@@ -137,8 +137,12 @@ async def coordinate_request(message: str, user_id: int, db: Session, chat_id: i
         
     except Exception as e:
         print(f"Error in coordinate_request: {e}")
+        print(f"Error type: {type(e).__name__}")
+        print(f"User ID: {user_id}, Chat ID: {chat_id}")
+        print(f"Message: {message}")
+        
         # Return a general error response
         error_response = GeneralResponse(
-            response="I'm sorry, I encountered an error while processing your request. Please try again."
+            response="I'm sorry, I encountered an error while processing your request. Please try again. If you're asking about your wardrobe, make sure you have some clothing items added to it."
         )
         return AgentResponse(result=error_response) 
