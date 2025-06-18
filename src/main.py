@@ -1,8 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv()
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 from src.database import engine, Base
 from src.routers import auth, agent_router, wardrobe, waitlist, chat, tryon
 import os
@@ -10,7 +12,30 @@ import os
 # Создаем таблицы
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="ClosetMind API")
+# Middleware для контроля размера файла
+class LimitUploadSize(BaseHTTPMiddleware):
+    def __init__(self, app, max_upload_size: int):
+        super().__init__(app)
+        self.max_upload_size = max_upload_size
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "POST":
+            if "content-length" in request.headers:
+                content_length = int(request.headers["content-length"])
+                if content_length > self.max_upload_size:
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": f"File too large. Maximum size allowed is {self.max_upload_size/1024/1024:.1f}MB"
+                        }
+                    )
+        return await call_next(request)
+
+app = FastAPI(
+    title="ClosetMind API",
+    # Увеличиваем лимит размера запроса до 10MB
+    max_upload_size=50 * 1024 * 1024  # 10MB в байтах
+)
 
 # Настройка CORS
 origins = [
@@ -27,6 +52,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"]
 )
+
+# Добавляем middleware для контроля размера файла (10MB)
+app.add_middleware(LimitUploadSize, max_upload_size=10 * 1024 * 1024)
 
 # Подключаем роутеры
 app.include_router(auth.router)
