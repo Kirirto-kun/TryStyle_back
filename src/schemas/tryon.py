@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from fastapi import UploadFile, File
 
 class TryOnBase(BaseModel):
     clothing_image_url: str
