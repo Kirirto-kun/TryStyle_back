@@ -13,9 +13,15 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="ClosetMind API")
 
 # Настройка CORS
+origins = [
+    "https://stylence.vercel.app",
+    "http://localhost:3000",  # Для локальной разработки
+    "http://localhost:5173",  # Для Vite dev server
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
