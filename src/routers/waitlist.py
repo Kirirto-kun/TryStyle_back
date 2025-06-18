@@ -5,6 +5,7 @@ from typing import List
 import os
 import base64
 import uuid
+import replicate
 
 from src.database import get_db
 from src.models.user import User
@@ -13,6 +14,7 @@ from src.schemas.waitlist import (
     WaitListItemCreate,
     WaitListItemResponse,
     WaitListScreenshotUpload,
+    TryOnRequest,
 )
 from src.utils.auth import get_current_user
 from src.utils.firebase_storage import upload_image_to_firebase
@@ -68,6 +70,64 @@ async def upload_screenshot(
     db.commit()
     db.refresh(db_item)
     return db_item
+
+
+@router.post("/try-on/{item_id}", response_model=WaitListItemResponse)
+async def try_on_item(
+    item_id: int,
+    payload: TryOnRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Try on a waitlist item with user's photo."""
+    # Get the waitlist item
+    db_item = db.query(WaitListItem).filter(
+        WaitListItem.id == item_id,
+        WaitListItem.user_id == current_user.id
+    ).first()
+    
+    if not db_item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Waitlist item not found or does not belong to current user"
+        )
+
+    try:
+        # Decode and upload user's photo
+        img_bytes = base64.b64decode(payload.image_base64.split(",")[-1])
+        file_name = f"user_photo_{uuid.uuid4()}.png"
+        user_photo_url = upload_image_to_firebase(img_bytes, file_name)
+
+        # Call Replicate API for try-on
+        input_data = {
+            "garm_img": db_item.image_url,
+            "human_img": user_photo_url,
+            "garment_des": ""
+        }
+
+        output = replicate.run(
+            "cuuupid/idm-vton:0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
+            input=input_data
+        )
+
+        # Save the result to Firebase
+        result_bytes = output.read()
+        result_file_name = f"tryon_{uuid.uuid4()}.png"
+        try_on_url = upload_image_to_firebase(result_bytes, result_file_name)
+
+        # Update the waitlist item with try-on URL
+        db_item.try_on_url = try_on_url
+        db_item.status = "processed"
+        db.commit()
+        db.refresh(db_item)
+
+        return db_item
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process try-on request: {str(e)}"
+        )
 
 
 @router.get("/items", response_model=List[WaitListItemResponse])

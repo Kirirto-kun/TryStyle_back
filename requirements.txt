@@ -137,3 +137,4 @@ pydantic-ai
 google-generativeai>=0.6.0
 azure-identity
 azure-ai-ml
+replicate

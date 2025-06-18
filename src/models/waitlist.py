@@ -11,6 +11,7 @@ class WaitListItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     image_url = Column(String, nullable=False)
+    try_on_url = Column(String, nullable=True)  # URL of the try-on result image
     status = Column(String, default="pending")  # e.g., pending, processed, failed
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
