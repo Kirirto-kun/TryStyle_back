@@ -8,7 +8,7 @@ from src.models.clothing import ClothingItem
 from src.models.user import User
 from src.schemas.clothing import ClothingItemCreate, ClothingItemResponse
 from src.utils.auth import get_current_user
-from src.utils.firebase_storage import upload_image_to_firebase
+from src.utils.firebase_storage import upload_image_to_firebase_async
 from src.schemas.clothing import PhotoUpload
 from src.utils.analyze_image import analyze_image
 
@@ -29,7 +29,7 @@ async def create_clothing_items(
             
             # Upload to Firebase Storage
             file_name = f"{uuid.uuid4()}.png"
-            image_url = upload_image_to_firebase(img_bytes, file_name)
+            image_url = await upload_image_to_firebase_async(img_bytes, file_name)
             
             # Analyze image using Azure OpenAI
             analysis = await analyze_image(image_url)

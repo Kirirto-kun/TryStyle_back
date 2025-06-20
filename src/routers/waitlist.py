@@ -6,6 +6,8 @@ import os
 import base64
 import uuid
 import replicate
+import asyncio
+import requests
 
 from src.database import get_db
 from src.models.user import User
@@ -17,7 +19,7 @@ from src.schemas.waitlist import (
     TryOnRequest,
 )
 from src.utils.auth import get_current_user
-from src.utils.firebase_storage import upload_image_to_firebase
+from src.utils.firebase_storage import upload_image_to_firebase_async
 
 router = APIRouter(prefix="/waitlist", tags=["waitlist"])
 
@@ -58,7 +60,7 @@ async def upload_screenshot(
     # Upload to Firebase Storage
     file_name = f"{uuid.uuid4()}.png"
     try:
-        image_url = upload_image_to_firebase(img_bytes, file_name)
+        image_url = await upload_image_to_firebase_async(img_bytes, file_name)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -96,24 +98,31 @@ async def try_on_item(
         # Decode and upload user's photo
         img_bytes = base64.b64decode(payload.image_base64.split(",")[-1])
         file_name = f"user_photo_{uuid.uuid4()}.png"
-        user_photo_url = upload_image_to_firebase(img_bytes, file_name)
+        user_photo_url = await upload_image_to_firebase_async(img_bytes, file_name)
 
-        # Call Replicate API for try-on
-        input_data = {
-            "garm_img": db_item.image_url,
-            "human_img": user_photo_url,
-            "garment_des": ""
-        }
+        # Call Replicate API for try-on (asynchronously in thread)
+        def call_replicate_model():
+            input_data = {
+                "garm_img": db_item.image_url,
+                "human_img": user_photo_url,
+                "garment_des": ""
+            }
+            output = replicate.run(
+                "cuuupid/idm-vton:0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
+                input=input_data
+            )
+            # Download the result
+            response = requests.get(output)
+            response.raise_for_status()
+            return response.content
 
-        output = replicate.run(
-            "cuuupid/idm-vton:0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
-            input=input_data
-        )
+        # Run the blocking Replicate call in a separate thread
+        loop = asyncio.get_running_loop()
+        result_bytes = await loop.run_in_executor(None, call_replicate_model)
 
         # Save the result to Firebase
-        result_bytes = output.read()
         result_file_name = f"tryon_{uuid.uuid4()}.png"
-        try_on_url = upload_image_to_firebase(result_bytes, result_file_name)
+        try_on_url = await upload_image_to_firebase_async(result_bytes, result_file_name)
 
         # Update the waitlist item with try-on URL
         db_item.try_on_url = try_on_url

@@ -29,6 +29,9 @@ from typing import Optional
 import os
 import json
 import tempfile
+import asyncio
+from functools import partial
+from threading import Lock
 
 import firebase_admin
 from firebase_admin import credentials, storage
@@ -38,6 +41,7 @@ dotenv.load_dotenv()
 
 # Holds the singleton Firebase app instance once initialised.
 _firebase_app: Optional[firebase_admin.App] = None
+_firebase_app_lock = Lock()
 
 
 def _initialise_firebase() -> firebase_admin.App:
@@ -51,20 +55,31 @@ def _initialise_firebase() -> firebase_admin.App:
 
     global _firebase_app  # noqa: PLW0603 – module-level singleton is OK here.
 
+    # First, check without a lock for performance. If the app is already
+    # initialized, we can return it without the overhead of acquiring a lock.
     if _firebase_app is not None:
         return _firebase_app
 
-    bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET")
-    if not bucket_name:
-        raise RuntimeError(
-            "Missing FIREBASE_STORAGE_BUCKET environment variable – cannot "
-            "initialise Firebase storage."
-        )
+    # If the app is not initialized, acquire a lock to ensure that only
+    # one thread initializes it.
+    with _firebase_app_lock:
+        # Check again inside the lock to prevent a race condition where another
+        # thread might have initialized the app while the current thread was
+        # waiting for the lock.
+        if _firebase_app is not None:
+            return _firebase_app
 
-    cred: credentials.Base = _load_credentials()
+        bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET")
+        if not bucket_name:
+            raise RuntimeError(
+                "Missing FIREBASE_STORAGE_BUCKET environment variable – cannot "
+                "initialise Firebase storage."
+            )
 
-    _firebase_app = firebase_admin.initialize_app(cred, {"storageBucket": bucket_name})
-    return _firebase_app
+        cred: credentials.Base = _load_credentials()
+
+        _firebase_app = firebase_admin.initialize_app(cred, {"storageBucket": bucket_name})
+        return _firebase_app
 
 
 def _load_credentials() -> credentials.Base:
@@ -138,4 +153,16 @@ def upload_image_to_firebase(image_bytes: bytes, file_name: str, *, content_type
     return blob.public_url
 
 
-__all__ = ["upload_image_to_firebase"]
+async def upload_image_to_firebase_async(image_bytes: bytes, file_name: str, *, content_type: str = "image/png") -> str:
+    """Asynchronous wrapper for upload_image_to_firebase that runs it in a separate thread."""
+    loop = asyncio.get_running_loop()
+    # Use to_thread to run the synchronous, blocking function in a separate thread
+    # and wait for its result without blocking the main asyncio event loop.
+    func = partial(upload_image_to_firebase, image_bytes, file_name, content_type=content_type)
+    return await loop.run_in_executor(
+        None,  # Use the default thread pool executor
+        func
+    )
+
+
+__all__ = ["upload_image_to_firebase", "upload_image_to_firebase_async"]
