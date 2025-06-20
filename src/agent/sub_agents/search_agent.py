@@ -1,189 +1,137 @@
 import json
+import asyncio
 from typing import List
-from pydantic_ai import Agent
-from openai import AzureOpenAI
-import os
-from .base import get_azure_llm, ProductList, Product
+from pydantic_ai import Agent, ModelRetry, RunContext
+from .base import get_azure_llm, ProductList, Product, MessageHistory
 from src.utils.google_search import google_search
+from pydantic_ai.messages import ModelMessage
+from dataclasses import dataclass
 
 
-async def search_web(query: str) -> str:
-    """
-    Searches the web using Google Search API and returns results with links.
-    
-    Args:
-        query: Search query string
-        
-    Returns:
-        JSON string containing search results with links
-    """
-    try:
-        result = await google_search(query)
-        data = json.loads(result)
-        
-        # Extract links from search results
-        links = []
-        if 'organic' in data:
-            for item in data['organic']:
-                if 'link' in item:
-                    links.append({
-                        'title': item.get('title', ''),
-                        'link': item['link'],
-                        'snippet': item.get('snippet', '')
-                    })
-        
-        return json.dumps({'status': 'success', 'links': links, 'query': query})
-    except Exception as e:
-        return json.dumps({'status': 'error', 'message': str(e)})
-
-
-async def analyze_search_results_with_gpt4o(search_results: List[dict], original_query: str) -> ProductList:
-    """
-    Use Azure OpenAI GPT-4o with structured outputs to analyze search results 
-    and extract product information without web scraping.
-    
-    Args:
-        search_results: List of search result dictionaries with title, link, snippet
-        original_query: The original search query
-        
-    Returns:
-        ProductList: Structured list of products extracted from search results
-    """
-    try:
-        # Configure Azure OpenAI client for structured outputs
-        client = AzureOpenAI(
-            azure_endpoint=os.environ["AZURE_API_BASE"],
-            api_key=os.environ["AZURE_API_KEY"],
-            api_version="2024-10-21"  # Version that supports structured outputs
-        )
-        
-        # Prepare the search results text for analysis
-        search_text = f"Original search query: {original_query}\n\n"
-        search_text += "Search results:\n"
-        
-        for i, result in enumerate(search_results[:5], 1):  # Limit to top 5 results
-            search_text += f"{i}. Title: {result.get('title', 'N/A')}\n"
-            search_text += f"   Link: {result.get('link', 'N/A')}\n"
-            search_text += f"   Description: {result.get('snippet', 'N/A')}\n\n"
-        
-        # Use structured outputs to get product information
-        completion = client.beta.chat.completions.parse(
-            model=os.environ["AZURE_DEPLOYMENT_NAME"],
-            messages=[
-                {
-                    "role": "system", 
-                    "content": """You are an expert product analyst. Your task is to analyze search results and extract product information including names, prices, descriptions, and links.
-
-Instructions:
-- Extract product information from the search results provided
-- For each product, provide: name, price (with currency if available, or "Price not found"), description (concise, max 120 chars), and the direct link
-- Only include actual products that are for sale
-- If no clear products are found, return an empty list
-- Focus on the most relevant products based on the search query
-- Be accurate with product names and descriptions"""
-                },
-                {
-                    "role": "user",
-                    "content": f"Please analyze these search results and extract product information:\n\n{search_text}"
-                }
-            ],
-            response_format=ProductList,
-            max_tokens=4096,
-            temperature=0.1
-        )
-        
-        # Extract the structured response
-        if completion.choices[0].message.parsed:
-            return completion.choices[0].message.parsed
-        else:
-            print("No parsed response received")
-            return ProductList(products=[])
-            
-    except Exception as e:
-        print(f"Error in analyze_search_results_with_gpt4o: {e}")
-        return ProductList(products=[])
-
-
-async def find_products_online(query: str) -> str:
-    """
-    A comprehensive tool to find products online using search results analysis with GPT-4o.
-    This approach is much faster and more reliable than web scraping.
-
-    Args:
-        query: The user's search query for a product.
-
-    Returns:
-        JSON string with product information or error message.
-    """
-    print(f"Starting product search for query: {query}")
-    try:
-        # 1. Search for links using Google Search API
-        search_results_json = await search_web(query)
-        search_results = json.loads(search_results_json)
-
-        if search_results.get("status") != "success" or not search_results.get("links"):
-            return json.dumps({
-                "status": "error", 
-                "message": "Could not find any relevant links for the query."
-            })
-
-        # 2. Use GPT-4o with structured outputs to analyze search results
-        product_list = await analyze_search_results_with_gpt4o(
-            search_results["links"], 
-            query
-        )
-        
-        if product_list.products:
-            return json.dumps({
-                "status": "success", 
-                "products": [product.model_dump() for product in product_list.products],
-                "query": query
-            })
-        else:
-            return json.dumps({
-                "status": "success", 
-                "products": [],
-                "message": "No products found in search results"
-            })
-
-    except Exception as e:
-        print(f"An error occurred in find_products_online: {e}")
-        return json.dumps({
-            "status": "error", 
-            "message": f"An error occurred while searching for products: {e}"
-        })
-
-
-# Create the search agent
-search_agent = Agent(
-    get_azure_llm(),
+# A new agent instance dedicated to extracting product info from a single URL.
+# This approach encapsulates the extraction logic cleanly.
+url_extractor_agent = Agent(
+    model=get_azure_llm(),
     output_type=ProductList,
-    system_prompt="""You are a specialized product search agent using advanced AI analysis. Your job is to:
+    system_prompt="""You are an expert web page analyst specializing in e-commerce. Your task is to analyze the content of a given URL to find products matching a user's query.
 
-1. Use the `find_products_online` tool to search for products based on user queries
-2. The tool uses GPT-4o with structured outputs to analyze search results and extract product information
-3. Return a structured ProductList with accurate product details including name, price, description, and link
-4. Ensure all product information is properly formatted and relevant to the user's search
-
-This approach is much faster and more reliable than traditional web scraping.""",
-    tools=[find_products_online],
+INSTRUCTIONS:
+1.  Carefully examine the content of the provided URL. The user's query and the URL will be given in the prompt.
+2.  Based on the user's query, identify any and all products that are a good match.
+3.  For each matching product, extract its name, price, a brief description, and set the link to the URL you were given.
+4.  If the page is a list of multiple products (e.g., a category or search results page), extract all products that match the query.
+5.  If the page is a single product page, extract that product's information if it matches the query.
+6.  Return your findings as a `ProductList` object. The `search_query` should be the user's original query.
+7.  If no matching products are found, or if the page is irrelevant (e.g., an article, a blog post), return a `ProductList` with an empty `products` list.
+8.  The `price` field must be a string containing the price exactly as seen on the page (e.g., "₽1,500.00", "$29.99", "Price not available").
+""",
+    retries=2,
+    # Adding an output validator for robustness
+    output_validator=lambda output: output if isinstance(output, ProductList) else ModelRetry("Output must be a ProductList")
 )
 
-
-async def search_products(query: str) -> ProductList:
-    """
-    Search for products online using AI-powered search result analysis.
-    
-    Args:
-        query: The search query for products
-        
-    Returns:
-        ProductList: Structured list of found products
-    """
+async def extract_products_from_url(url: str, query: str) -> List[Product]:
+    """Analyzes a single URL using a powerful LLM to extract product information."""
+    print(f"   Analyzing page with LLM: {url}")
     try:
-        result = await search_agent.run(query)
-        return result.data
+        prompt = f"User Query: \"{query}\"\n\nPlease analyze this URL and extract all matching products based on my query: {url}"
+        result = await url_extractor_agent.run(prompt)
+        
+        products = result.data.products
+        if products:
+            print(f"      ✅ Found {len(products)} product(s) on {url}")
+            # Ensure the link and query are set correctly for each product
+            for p in products:
+                p.link = url
+            return products
+        else:
+            print(f"      ❌ No matching products found on {url}")
+            return []
     except Exception as e:
-        print(f"Error in search_products: {e}")
-        # Return empty result on error
-        return ProductList(products=[]) 
+        print(f"      ❗️ Error analyzing URL {url}: {e}")
+        return []
+
+
+async def intelligent_product_search(query: str) -> ProductList:
+    """
+    Performs an intelligent, multi-stage search for products.
+    This is the main entry point for all product searches.
+
+    Workflow:
+    1.  Uses Google Search to find relevant URLs.
+    2.  Uses a specialized AI agent to analyze each URL concurrently.
+    3.  The AI agent extracts product details if the page content matches the user query.
+    4.  Returns a curated list of verified products.
+
+    Args:
+        query: The user's full, original search query.
+    """
+    print(f"🔍 Starting intelligent search for: {query}")
+    try:
+        # Этап 1: Поиск в Google
+        print("🔎 Stage 1: Performing Google search...")
+        search_results_json = await google_search(query)
+        search_results = json.loads(search_results_json).get('organic', [])
+        
+        urls = [
+            result['link'] for result in search_results 
+            if 'link' in result and not any(x in result['link'] for x in ['.gov', '.xml', 'pinterest.com', 'youtube.com'])
+        ]
+        print(f"   - Found {len(urls)} potential URLs.")
+
+        if not urls:
+            return ProductList(products=[], search_query=query, total_found=0)
+
+        # Этап 2: Параллельный анализ страниц с помощью LLM
+        # We limit analysis to the top 8 results to balance speed and coverage.
+        print(f"🤖 Stage 2: Analyzing top {min(len(urls), 8)} URLs concurrently...")
+        tasks = [extract_products_from_url(url, query) for url in urls[:8]]
+        
+        results_from_urls = await asyncio.gather(*tasks)
+        
+        # Flatten the list of lists and remove duplicates
+        all_products = []
+        seen_products = set()
+        for product_list in results_from_urls:
+            for product in product_list:
+                # Simple deduplication based on product name and link
+                product_identifier = (product.name.strip().lower(), product.link)
+                if product_identifier not in seen_products:
+                    all_products.append(product)
+                    seen_products.add(product_identifier)
+
+        print(f"✅ Stage 3: Found {len(all_products)} unique matching products.")
+        
+        return ProductList(
+            products=all_products[:20],  # Return up to 20 products
+            search_query=query,
+            total_found=len(all_products)
+        )
+        
+    except Exception as e:
+        print(f"❌ Error in intelligent_product_search: {e}")
+        return ProductList(products=[], search_query=query, total_found=0)
+
+
+# Cached search agent instance
+_search_agent_instance = None
+
+def get_search_agent() -> Agent:
+    """
+    Returns a search agent designed to delegate tasks to the `intelligent_product_search` tool.
+    This agent's sole purpose is to orchestrate the search by calling its main tool.
+    """
+    global _search_agent_instance
+    
+    if _search_agent_instance is None:
+        _search_agent_instance = Agent(
+            get_azure_llm(),
+            output_type=ProductList,
+            system_prompt="""You are a search orchestrator. Your only job is to call the `intelligent_product_search` tool to find products for the user.
+Use the user's original, unmodified query as the input for the tool. Do not add, change, or remove anything from the user's query.
+""",
+            tools=[intelligent_product_search],
+            retries=2
+        )
+    
+    return _search_agent_instance 
