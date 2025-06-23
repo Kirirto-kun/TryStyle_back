@@ -10,6 +10,7 @@ from src.models.user import User
 from src.schemas.tryon import TryOnResponse
 from src.utils.auth import get_current_user
 from src.utils.firebase_storage import upload_image_to_firebase_async
+from src.utils.tryon_analyzer import analyze_image_for_tryon
 import replicate
 import asyncio
 
@@ -53,12 +54,17 @@ async def process_tryon_in_background(
         tryon.human_image_url = human_url
         db.commit()
 
+        # Analyze the clothing image to get a description
+        logger.info(f"Analyzing clothing image for try-on: {clothing_url}")
+        garment_description = await analyze_image_for_tryon(clothing_url)
+        logger.info(f"Generated garment description: {garment_description}")
+
         # 3. Call Replicate try-on model (asynchronously in thread)
         def call_replicate_model():
             input_data = {
                 "garm_img": clothing_url,
                 "human_img": human_url,
-                "garment_des": ""
+                "garment_des": garment_description
             }
             output = replicate.run(
                 "cuuupid/idm-vton:0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
