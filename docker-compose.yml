@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: secret
       POSTGRES_DB: fastapidb
-      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - dbdata:/var/lib/postgresql/data
     ports:
