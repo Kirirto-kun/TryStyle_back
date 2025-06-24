@@ -15,6 +15,7 @@ from src.schemas.chat import (
 )
 from src.utils.auth import get_current_user
 from src.agent.agents import process_user_request
+from src.utils.chat_title_generator import generate_chat_title
 
 router = APIRouter(prefix="/chats", tags=["chats"])
 
@@ -185,4 +186,54 @@ async def delete_chat(
     db.delete(chat)
     db.commit()
     
-    return {"message": "Chat deleted successfully"} 
+    return {"message": "Chat deleted successfully"}
+
+
+@router.post("/init", response_model=ChatWithMessages, status_code=status.HTTP_201_CREATED)
+async def init_chat_with_first_message(
+    request: SendMessageRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new chat, auto-generate its title from the first user message and save that message."""
+
+    # 1. Generate chat title
+    title = await generate_chat_title(request.message)
+
+    # 2. Create chat record
+    db_chat = Chat(title=title, user_id=current_user.id)
+    db.add(db_chat)
+    db.commit()
+    db.refresh(db_chat)
+
+    # 3. Save user's first message
+    first_msg = Message(content=request.message, role="user", chat_id=db_chat.id)
+    db.add(first_msg)
+    db.commit()
+    db.refresh(first_msg)
+
+    # 4. Получаем ответ ЛЛМ и сохраняем его
+    try:
+        ai_response_text = await process_user_request(
+            request.message,
+            current_user.id,
+            db=db,
+            chat_id=db_chat.id
+        )
+
+        ai_msg = Message(content=ai_response_text, role="assistant", chat_id=db_chat.id)
+        db.add(ai_msg)
+
+        # Обновляем время изменения чата
+        db_chat.updated_at = datetime.utcnow()
+
+        db.commit()
+    except Exception as e:
+        # Если ЛЛМ упал, откатывать сообщения не будем – чат всё равно создан.
+        db.rollback()
+        print(f"Failed to generate AI response for new chat {db_chat.id}: {e}")
+
+    # 5. Refresh chat to include relationship data (messages)
+    db.refresh(db_chat)
+
+    return db_chat 
