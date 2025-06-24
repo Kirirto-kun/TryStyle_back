@@ -8,7 +8,7 @@ from src.models.clothing import ClothingItem
 from src.models.user import User
 from src.schemas.clothing import ClothingItemCreate, ClothingItemResponse
 from src.utils.auth import get_current_user
-from src.utils.firebase_storage import upload_image_to_firebase_async
+from src.utils.firebase_storage import upload_image_to_firebase_async, delete_image_from_firebase_async
 from src.schemas.clothing import PhotoUpload
 from src.utils.analyze_image import analyze_image
 
@@ -63,4 +63,34 @@ async def get_my_clothing_items(
     current_user: User = Depends(get_current_user)
 ):
     items = db.query(ClothingItem).filter(ClothingItem.user_id == current_user.id).all()
-    return items 
+    return items
+
+@router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_clothing_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a clothing item from the wardrobe.
+    """
+    item = db.query(ClothingItem).filter(
+        ClothingItem.id == item_id,
+        ClothingItem.user_id == current_user.id
+    ).first()
+
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clothing item not found"
+        )
+
+    # Delete image from Firebase
+    if item.image_url:
+        await delete_image_from_firebase_async(item.image_url)
+
+    # Delete from database
+    db.delete(item)
+    db.commit()
+
+    return 

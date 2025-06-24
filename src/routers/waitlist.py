@@ -19,7 +19,8 @@ from src.schemas.waitlist import (
     TryOnRequest,
 )
 from src.utils.auth import get_current_user
-from src.utils.firebase_storage import upload_image_to_firebase_async
+from src.utils.firebase_storage import upload_image_to_firebase_async, delete_image_from_firebase_async
+from src.utils.tryon_analyzer import analyze_image_for_tryon
 
 router = APIRouter(prefix="/waitlist", tags=["waitlist"])
 
@@ -100,12 +101,19 @@ async def try_on_item(
         file_name = f"user_photo_{uuid.uuid4()}.png"
         user_photo_url = await upload_image_to_firebase_async(img_bytes, file_name)
 
+        # Analyze the clothing image to get a description and category
+        analysis_result = await analyze_image_for_tryon(db_item.image_url)
+        garment_description = analysis_result.get("garment_des", "")
+        category = analysis_result.get("category", "upper_body") # Default to upper_body
+
         # Call Replicate API for try-on (asynchronously in thread)
         def call_replicate_model():
             input_data = {
                 "garm_img": db_item.image_url,
                 "human_img": user_photo_url,
-                "garment_des": ""
+                "garment_des": garment_description,
+                "category": category,
+                "steps": 40
             }
             output = replicate.run(
                 "cuuupid/idm-vton:0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
@@ -151,6 +159,39 @@ async def get_my_waitlist(
         .all()
     )
     return items
+
+
+@router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_waitlist_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a waitlist item.
+    """
+    item = db.query(WaitListItem).filter(
+        WaitListItem.id == item_id,
+        WaitListItem.user_id == current_user.id
+    ).first()
+
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Waitlist item not found"
+        )
+
+    # Delete images from Firebase
+    if item.image_url:
+        await delete_image_from_firebase_async(item.image_url)
+    if item.try_on_url:
+        await delete_image_from_firebase_async(item.try_on_url)
+
+    # Delete from database
+    db.delete(item)
+    db.commit()
+
+    return
 
 
 @router.get("/download-extension")
