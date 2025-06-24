@@ -9,7 +9,7 @@ from src.models.tryon import TryOn
 from src.models.user import User
 from src.schemas.tryon import TryOnResponse
 from src.utils.auth import get_current_user
-from src.utils.firebase_storage import upload_image_to_firebase_async
+from src.utils.firebase_storage import upload_image_to_firebase_async, delete_image_from_firebase_async
 from src.utils.tryon_analyzer import analyze_image_for_tryon
 import replicate
 import asyncio
@@ -56,15 +56,20 @@ async def process_tryon_in_background(
 
         # Analyze the clothing image to get a description
         logger.info(f"Analyzing clothing image for try-on: {clothing_url}")
-        garment_description = await analyze_image_for_tryon(clothing_url)
+        analysis_result = await analyze_image_for_tryon(clothing_url)
+        garment_description = analysis_result.get("garment_des", "")
+        category = analysis_result.get("category", "upper_body") # Default to upper_body
         logger.info(f"Generated garment description: {garment_description}")
+        logger.info(f"Determined category: {category}")
 
         # 3. Call Replicate try-on model (asynchronously in thread)
         def call_replicate_model():
             input_data = {
+                "steps": 40,
                 "garm_img": clothing_url,
                 "human_img": human_url,
-                "garment_des": garment_description
+                "garment_des": garment_description,
+                "category": category
             }
             output = replicate.run(
                 "cuuupid/idm-vton:0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985",
@@ -158,4 +163,38 @@ async def get_my_tryons(
     current_user: User = Depends(get_current_user)
 ):
     tryons = db.query(TryOn).filter(TryOn.user_id == current_user.id).order_by(TryOn.created_at.desc()).all()
-    return tryons 
+    return tryons
+
+@router.delete("/{tryon_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tryon(
+    tryon_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a try-on result.
+    """
+    tryon = db.query(TryOn).filter(
+        TryOn.id == tryon_id,
+        TryOn.user_id == current_user.id
+    ).first()
+
+    if not tryon:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Try-on not found"
+        )
+
+    # Delete all associated images from Firebase
+    if tryon.clothing_image_url:
+        await delete_image_from_firebase_async(tryon.clothing_image_url)
+    if tryon.human_image_url:
+        await delete_image_from_firebase_async(tryon.human_image_url)
+    if tryon.result_url:
+        await delete_image_from_firebase_async(tryon.result_url)
+
+    # Delete from database
+    db.delete(tryon)
+    db.commit()
+
+    return 

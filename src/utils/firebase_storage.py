@@ -32,6 +32,7 @@ import tempfile
 import asyncio
 from functools import partial
 from threading import Lock
+import re
 
 import firebase_admin
 from firebase_admin import credentials, storage
@@ -165,4 +166,39 @@ async def upload_image_to_firebase_async(image_bytes: bytes, file_name: str, *, 
     )
 
 
-__all__ = ["upload_image_to_firebase", "upload_image_to_firebase_async"]
+def delete_image_from_firebase(file_url: str):
+    """
+    Deletes an image from Firebase Storage using its public URL.
+    """
+    if not file_url:
+        return
+
+    app = _initialise_firebase()
+    bucket = storage.bucket(app=app)
+
+    # Extract file name from URL.
+    # The file name is the part of the path after the bucket name.
+    # Example URL: https://storage.googleapis.com/your-bucket-name/path/to/your/file.jpg
+    bucket_name = bucket.name
+    # We use a regex to robustly find the file path after the bucket name in the URL.
+    match = re.search(f"{bucket_name}/(.+?)(?=\\?|$)", file_url)
+    if not match:
+        # Log this situation? For now, we just ignore it.
+        return
+
+    file_name = match.group(1)
+    blob = bucket.blob(file_name)
+
+    # Check if the blob exists before trying to delete it.
+    if blob.exists():
+        blob.delete()
+
+
+async def delete_image_from_firebase_async(file_url: str):
+    """Asynchronous wrapper for delete_image_from_firebase."""
+    loop = asyncio.get_running_loop()
+    func = partial(delete_image_from_firebase, file_url)
+    await loop.run_in_executor(None, func)
+
+
+__all__ = ["upload_image_to_firebase", "upload_image_to_firebase_async", "delete_image_from_firebase_async"]

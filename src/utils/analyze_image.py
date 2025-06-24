@@ -8,7 +8,8 @@ load_dotenv()
 client = AsyncAzureOpenAI(    # Changed to AsyncAzureOpenAI
     api_key=os.getenv("AZURE_4o_OPENAI_KEY"),
     azure_endpoint=os.getenv("AZURE_4o_OPENAI_ENDPOINT"),
-    api_version="2025-01-01-preview" 
+    api_version="2025-01-01-preview",
+    timeout=30.0,
 )
 
 # 2) Системный prompt — жёстко фиксирует формат, чтобы пришёл чистый JSON
