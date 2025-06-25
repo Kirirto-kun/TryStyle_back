@@ -44,7 +44,7 @@ def send_verification_email(recipient_email: str, verification_code: str):
     
     subject = "Your Verification Code"
     html_content = f"<html><body><h1>Your verification code is: {verification_code}</h1></body></html>"
-    sender = {"name": "ClosetMind", "email": "no-reply@trystyle.live"}
+    sender = {"name": "TryStyle verification", "email": "no-reply@trystyle.live"}
     to = [{"email": recipient_email}]
     
     send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
