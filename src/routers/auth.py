@@ -11,7 +11,14 @@ from src.utils.auth import (
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
-from pydantic import BaseModel
+from src.utils.email import (
+    send_verification_email,
+    generate_verification_code,
+    store_verification_code,
+    get_verification_code,
+    delete_verification_code,
+)
+from pydantic import BaseModel, EmailStr
 import os
 from google.oauth2 import id_token
 from google.auth.transport.requests import Request as GoogleRequest
@@ -21,7 +28,29 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class GoogleLoginRequest(BaseModel):
     id_token: str
 
+class EmailSchema(BaseModel):
+    email: EmailStr
+
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+
+@router.post("/send-verification-code")
+def send_code(payload: EmailSchema, db: Session = Depends(get_db)):
+    # Проверяем, существует ли пользователь
+    db_user = db.query(User).filter(User.email == payload.email).first()
+    if db_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    code = generate_verification_code()
+    store_verification_code(payload.email, code)
+    if not send_verification_email(payload.email, code):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send verification email"
+        )
+    return {"message": "Verification code sent"}
 
 @router.post("/register", response_model=UserResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -33,6 +62,14 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
     
+    # Проверяем код верификации
+    stored_code = get_verification_code(user.email)
+    if not stored_code or stored_code != user.verification_code:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code"
+        )
+
     # Создаем нового пользователя
     hashed_password = get_password_hash(user.password)
     db_user = User(
@@ -43,6 +80,10 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    
+    # Удаляем код после успешной регистрации
+    delete_verification_code(user.email)
+
     return db_user
 
 @router.post("/token", response_model=Token)

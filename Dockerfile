@@ -57,9 +57,6 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
-RUN playwright install chromium
-
 # Copy application code
 COPY src/ ./src
 
