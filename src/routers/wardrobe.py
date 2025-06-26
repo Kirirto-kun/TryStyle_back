@@ -34,12 +34,15 @@ async def create_clothing_items(
             # Analyze image using Azure OpenAI
             analysis = await analyze_image(image_url)
             
+            # Filter out None values from features to prevent validation errors
+            features = [f for f in analysis.get("features", []) if f is not None and isinstance(f, str)]
+            
             # Create database entry
             db_item = ClothingItem(
                 name=analysis["name"],  # Use the name from analysis
                 image_url=image_url,
                 category=analysis["category"],
-                features=analysis["features"],
+                features=features,
                 user_id=current_user.id
             )
             db.add(db_item)
@@ -63,6 +66,12 @@ async def get_my_clothing_items(
     current_user: User = Depends(get_current_user)
 ):
     items = db.query(ClothingItem).filter(ClothingItem.user_id == current_user.id).all()
+    
+    # Clean up features to remove None values for existing items
+    for item in items:
+        if item.features:
+            item.features = [f for f in item.features if f is not None and isinstance(f, str)]
+    
     return items
 
 @router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

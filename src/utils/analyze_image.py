@@ -33,7 +33,8 @@ Return **ONLY** a valid JSON object shaped exactly like:
 • Typical features: fit (slim, loose, baggy), silhouette (straight, flared),
   length (cropped, longline), pattern (solid, striped, plaid, floral),
   distressing (ripped, distressed), rise (high-waist, mid-rise, low-rise), etc.
-• Use null for unknown values.
+• Features array must contain only strings, no null values.
+• If no features are identifiable, return an empty array.
 • Do NOT add markdown, comments or extra keys.
 """
 
