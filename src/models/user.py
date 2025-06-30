@@ -13,6 +13,9 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Новое поле для демонстрации миграций
+    phone = Column(String(20), nullable=True)
 
     # Relationship with ClothingItem
     clothing_items = relationship("ClothingItem", back_populates="user")
@@ -21,4 +24,7 @@ class User(Base):
     waitlist_items = relationship("WaitListItem", back_populates="user")
     
     # Relationship with Chat
-    chats = relationship("Chat", back_populates="user", cascade="all, delete-orphan") 
+    chats = relationship("Chat", back_populates="user", cascade="all, delete-orphan")
+    
+    # Relationship with Review
+    reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan") 

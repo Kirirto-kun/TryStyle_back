@@ -57,8 +57,10 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code and migration files
 COPY src/ ./src
+COPY alembic/ ./alembic
+COPY alembic.ini ./
 
 # Set proper permissions
 RUN chown -R appuser:appuser /code
@@ -69,5 +71,5 @@ USER appuser
 # Expose the port
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# Apply migrations and run the application
+CMD ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"]

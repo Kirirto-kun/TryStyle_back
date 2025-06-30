@@ -6,11 +6,11 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from src.database import engine, Base
-from src.routers import auth, agent_router, wardrobe, waitlist, chat, tryon
+from src.routers import auth, agent_router, wardrobe, waitlist, chat, tryon, stores, products, reviews
 import os
 
-# Создаем таблицы
-Base.metadata.create_all(bind=engine)
+# NOTE: Таблицы теперь создаются через миграции Alembic
+# Используйте: alembic upgrade head для применения миграций
 
 # Middleware для контроля размера файла
 class LimitUploadSize(BaseHTTPMiddleware):
@@ -63,6 +63,11 @@ app.include_router(wardrobe.router)
 app.include_router(waitlist.router)
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(tryon.router)
+
+# Новые роутеры для каталога
+app.include_router(stores.router, prefix="/api/v1")
+app.include_router(products.router, prefix="/api/v1")
+app.include_router(reviews.router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
