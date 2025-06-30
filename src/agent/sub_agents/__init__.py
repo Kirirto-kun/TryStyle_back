@@ -8,6 +8,7 @@ from .base import (
     AgentResponse
 )
 from .coordinator_agent import coordinate_request
+from .catalog_search_agent import get_catalog_search_agent, search_catalog_products  # НОВЫЙ - поиск в локальном каталоге
 
 __all__ = [
     "Product",
@@ -16,4 +17,6 @@ __all__ = [
     "GeneralResponse",
     "AgentResponse",
     "coordinate_request",
+    "get_catalog_search_agent",
+    "search_catalog_products",
 ]

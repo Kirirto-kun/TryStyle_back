@@ -4,7 +4,8 @@ from typing import Union, List
 from sqlalchemy.orm import Session
 from dataclasses import dataclass
 from .base import get_azure_llm, AgentResponse, ProductList, Outfit, GeneralResponse, MessageHistory
-from .search_agent import get_search_agent
+from .search_agent import get_search_agent  # ВРЕМЕННО ОТКЛЮЧЕН - поиск в интернете
+from .catalog_search_agent import get_catalog_search_agent, search_catalog_products  # НОВЫЙ - поиск в локальном каталоге
 from .outfit_agent import create_outfit_agent  
 from .general_agent import get_general_agent
 from src.models.chat import Message as DBMessage
@@ -55,12 +56,14 @@ You have access to conversation history to understand the context and provide be
 ROUTING DECISION LOGIC WITH CONTEXT:
 Analyze the user's message AND conversation history to determine the appropriate agent:
 
-1. SEARCH AGENT ("search") - Use search_products tool for:
-   - Finding, buying, shopping, looking for products
-   - Price comparisons, product recommendations
-   - E-commerce related queries
-   - Keywords: "find", "buy", "shop", "price", "product", "purchase"
-   - Follow-ups to previous search queries (refinements, alternatives, etc.)
+1. CATALOG SEARCH AGENT ("search") - Use search_products tool for:
+   - Finding products in H&M Kazakhstan catalog (Almaty, Aktobe)
+   - Looking for specific clothing items, brands, categories
+   - Price queries, size/color searches in local catalog
+   - Style recommendations and outfit coordination
+   - Keywords: "find", "looking for", "want", "need", "search", "show me"
+   - Examples: "I want business pants", "show me black t-shirts", "what goes with jeans"
+   - Follow-ups to previous searches (refinements, alternatives, styling)
 
 2. OUTFIT AGENT ("outfit") - Use recommend_outfit tool for:
    - Styling, dressing, outfit coordination
@@ -168,32 +171,40 @@ Please consider the conversation history when providing your response. If this i
 
 async def search_products(ctx: RunContext[CoordinatorDependencies], user_message: str) -> ProductList:
     """
-    Search for products based on user query with conversation context.
-    Uses enhanced multi-stage search with marketplace support.
+    Search for products in the internal H&M catalog based on user query.
+    Now searches only in local database catalog instead of external sources.
     
     Args:
         user_message: The user's search request
         
     Returns:
-        ProductList: Search results with products
+        ProductList: Search results from internal H&M catalog
     """
     try:
         # Get chat history for context
         history = await get_chat_history(ctx.deps.db, ctx.deps.chat_id)
         
-        # Create contextual prompt
-        contextual_prompt = create_contextual_prompt(user_message, history, "search")
-        
-        # The new search agent is simpler and does not require explicit dependencies.
-        # It operates directly on the contextual prompt and message history.
-        search_agent = get_search_agent()
-        result = await search_agent.run(
-            contextual_prompt,
+        # НОВЫЙ ПОДХОД: Поиск в локальном каталоге H&M
+        result = await search_catalog_products(
+            message=user_message,
+            user_id=ctx.deps.user_id,
+            db=ctx.deps.db,
+            chat_id=ctx.deps.chat_id,
             message_history=history.to_pydantic_ai_messages()
         )
-        return result.data
+        return result
+        
+        # СТАРЫЙ ПОДХОД (временно отключен): Поиск в интернете
+        # contextual_prompt = create_contextual_prompt(user_message, history, "search")
+        # search_agent = get_search_agent()
+        # result = await search_agent.run(
+        #     contextual_prompt,
+        #     message_history=history.to_pydantic_ai_messages()
+        # )
+        # return result.data
+        
     except Exception as e:
-        print(f"Error in search_products: {e}")
+        print(f"Error in search_products (catalog search): {e}")
         # Return valid empty result on error
         return ProductList(
             products=[],

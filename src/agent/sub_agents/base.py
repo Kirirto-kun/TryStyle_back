@@ -1,5 +1,5 @@
 import os
-from typing import Union, List, Literal
+from typing import Union, List, Literal, Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, validator, field_validator
 from pydantic_ai.models.openai import OpenAIModel
@@ -56,19 +56,46 @@ class Product(BaseModel):
     )
     price: str = Field(
         ...,
-        description='Price with currency symbol (e.g. "$29.99", "€15.00") or exactly "Price not found" if not available',
-        pattern=r'^(\$|€|£|¥|\d+\.?\d*\s*[A-Z]{3}|\d+\.?\d*\s*(USD|EUR|GBP|JPY)|Price not found).*$'
+        description='Price with currency symbol (e.g. "$29.99", "€15.00", "₸16,500") or exactly "Price not found" if not available'
     )
     description: str = Field(
         ..., 
         min_length=10,
-        max_length=150,
-        description="Concise, informative description highlighting key features (10-150 chars)"
+        max_length=500,
+        description="Concise, informative description highlighting key features (10-500 chars)"
     )
     link: str = Field(
         ..., 
-        pattern=r'^https?://.+',
-        description="Valid HTTP/HTTPS URL to the product page"
+        description="URL to the product page (can be relative /products/1 or absolute https://...)"
+    )
+    # NEW FIELDS FOR CATALOG PRODUCTS:
+    image_urls: List[str] = Field(
+        default_factory=list,
+        description="List of product image URLs for display on frontend"
+    )
+    original_price: Optional[str] = Field(
+        default=None,
+        description="Original price before discount (if applicable)"
+    )
+    store_name: Optional[str] = Field(
+        default=None,
+        description="Name of the store selling this product"
+    )
+    store_city: Optional[str] = Field(
+        default=None,
+        description="City where the store is located"
+    )
+    sizes: List[str] = Field(
+        default_factory=list,
+        description="Available sizes for this product"
+    )
+    colors: List[str] = Field(
+        default_factory=list,
+        description="Available colors for this product"
+    )
+    in_stock: bool = Field(
+        default=True,
+        description="Whether the product is currently in stock"
     )
 
     @field_validator('name')
