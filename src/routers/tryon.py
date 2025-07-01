@@ -4,7 +4,7 @@ from typing import List
 import uuid
 import requests
 import logging
-from src.database import get_db, SessionLocal
+from src.database import get_db, get_db_session
 from src.models.tryon import TryOn
 from src.models.user import User
 from src.schemas.tryon import TryOnResponse
@@ -28,11 +28,15 @@ async def process_tryon_in_background(
     """
     Background task to process the try-on request without blocking the server.
     This now handles file uploads as well.
+    Fixed: Proper session management to prevent connection leaks.
     """
-    db = SessionLocal()
-    tryon = None  # Ensure tryon is defined in the outer scope
+    db = None
+    tryon = None
     try:
         logger.info(f"Starting background try-on process for tryon_id: {tryon_id}")
+        
+        # Create database session with proper management
+        db = get_db_session()
         
         # 1. Get the TryOn object
         tryon = db.query(TryOn).filter(TryOn.id == tryon_id).first()
@@ -94,12 +98,22 @@ async def process_tryon_in_background(
     
     except Exception as e:
         logger.error(f"Error in background task for tryon_id {tryon_id}: {e}")
-        if tryon:
-            tryon.status = "failed"
-            db.commit()
+        # Update status to failed if we have access to the tryon object and db session
+        if tryon and db:
+            try:
+                tryon.status = "failed"
+                db.commit()
+            except Exception as commit_error:
+                logger.error(f"Failed to update tryon status to failed: {commit_error}")
 
     finally:
-        db.close()
+        # CRITICAL: Always close the database session to prevent connection leaks
+        if db:
+            try:
+                db.close()
+                logger.debug(f"Database session closed for tryon_id: {tryon_id}")
+            except Exception as close_error:
+                logger.error(f"Error closing database session: {close_error}")
 
 @router.post("/", response_model=TryOnResponse)
 async def create_tryon(

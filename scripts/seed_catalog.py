@@ -11,8 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from sqlalchemy.orm import sessionmaker
-from src.database import engine
+from src.database import get_db_session
 from src.models.store import Store
 from src.models.product import Product
 from src.models.review import Review
@@ -24,15 +23,12 @@ from src.models.tryon import TryOn
 import random
 from datetime import datetime, timedelta
 
-# Создаем сессию
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 async def create_test_data():
     """Создать тестовые данные для каталога"""
     
-    db = SessionLocal()
-    
+    db = None
     try:
+        db = get_db_session()
         print("🌱 Создаём тестовые данные для каталога...")
         
         # 1. Создаём тестовые магазины
@@ -353,19 +349,25 @@ async def create_test_data():
         
     except Exception as e:
         print(f"❌ Ошибка при создании тестовых данных: {e}")
-        db.rollback()
+        if db:
+            db.rollback()
         return False
     
     finally:
-        db.close()
+        # CRITICAL: Always close the database session
+        if db:
+            try:
+                db.close()
+            except Exception as close_error:
+                print(f"Error closing database session: {close_error}")
 
 
 def clear_catalog_data():
     """Очистить данные каталога"""
     
-    db = SessionLocal()
-    
+    db = None
     try:
+        db = get_db_session()
         print("🧹 Очищаем данные каталога...")
         
         # Удаляем в правильном порядке (из-за внешних ключей)
@@ -378,10 +380,16 @@ def clear_catalog_data():
         
     except Exception as e:
         print(f"❌ Ошибка при очистке данных: {e}")
-        db.rollback()
+        if db:
+            db.rollback()
     
     finally:
-        db.close()
+        # CRITICAL: Always close the database session
+        if db:
+            try:
+                db.close()
+            except Exception as close_error:
+                print(f"Error closing database session: {close_error}")
 
 
 async def main():

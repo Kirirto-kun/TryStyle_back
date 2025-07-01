@@ -2,7 +2,7 @@ import json
 from pydantic_ai import Agent, ModelRetry
 from typing import List
 from .base import get_azure_llm, Outfit, OutfitItem
-from src.database import SessionLocal
+from src.database import get_db_session
 from src.models.clothing import ClothingItem
 from pydantic_ai.messages import ModelMessage
 
@@ -14,15 +14,26 @@ _outfit_agents_cache = {}
 class WardrobeManager:
     """A class to manage wardrobe-related tools, ensuring they have user context."""
 
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int, db_session=None):
         if not isinstance(user_id, int):
             raise TypeError("user_id must be an integer.")
         self.user_id = user_id
-        self.db = SessionLocal()
+        # Use provided session or create a new one for this manager
+        self.db = db_session if db_session is not None else get_db_session()
+        self._owns_session = db_session is None  # Track if we created the session
+
+    def close_session(self):
+        """Explicitly close the database session if we own it."""
+        if hasattr(self, 'db') and self._owns_session:
+            try:
+                self.db.close()
+            except Exception as e:
+                print(f"Error closing database session in WardrobeManager: {e}")
 
     def __del__(self):
-        if hasattr(self, 'db'):
-            self.db.close()
+        """Cleanup session on object destruction as fallback."""
+        if hasattr(self, '_owns_session') and self._owns_session:
+            self.close_session()
 
     def get_user_wardrobe(self) -> str:
         """
@@ -78,13 +89,14 @@ class WardrobeManager:
             )
 
 
-def create_outfit_agent(user_id: int) -> Agent:
+def create_outfit_agent(user_id: int, db_session=None) -> Agent:
     """
     Creates or returns a cached outfit recommendation agent for a specific user.
     Enhanced with strict structured output validation and conversation context awareness.
     
     Args:
         user_id: The ID of the user
+        db_session: Optional database session to use (for proper session management)
         
     Returns:
         Agent: Configured outfit recommendation agent (cached per user) with context awareness
@@ -95,8 +107,8 @@ def create_outfit_agent(user_id: int) -> Agent:
     if user_id in _outfit_agents_cache:
         return _outfit_agents_cache[user_id]
     
-    # Create new agent for this user
-    wardrobe_manager = WardrobeManager(user_id=user_id)
+    # Create new agent for this user with proper session management
+    wardrobe_manager = WardrobeManager(user_id=user_id, db_session=db_session)
     
     agent = Agent(
         get_azure_llm(),
@@ -225,7 +237,7 @@ def clear_outfit_agent_cache(user_id: int = None):
         _outfit_agents_cache.clear()
 
 
-async def recommend_outfit(user_id: int, request: str = "What should I wear today?", message_history: List[ModelMessage] = None) -> Outfit:
+async def recommend_outfit(user_id: int, request: str = "What should I wear today?", message_history: List[ModelMessage] = None, db_session=None) -> Outfit:
     """
     Get outfit recommendations for a user based on their wardrobe with conversation context awareness.
     Now understands conversation history for better contextual outfit recommendations!
@@ -234,17 +246,27 @@ async def recommend_outfit(user_id: int, request: str = "What should I wear toda
         user_id: The ID of the user
         request: The specific outfit request (optional)
         message_history: Optional conversation history for context and preference learning
+        db_session: Optional database session to use (for proper session management)
         
     Returns:
         Outfit: Strictly validated outfit recommendation with context awareness
     """
+    db = None
+    wardrobe_manager = None
+    
     try:
-        agent = create_outfit_agent(user_id)
+        # Use provided session or create a new one
+        db = db_session if db_session is not None else get_db_session()
+        owns_session = db_session is None
+        
+        # Create agent with proper session management
+        agent = create_outfit_agent(user_id, db_session=db)
         result = await agent.run(
             request,
             message_history=message_history
         )
         return result.data
+        
     except Exception as e:
         print(f"Error in recommend_outfit: {e}")
         # Return a helpful error message in the correct structured format
@@ -253,4 +275,11 @@ async def recommend_outfit(user_id: int, request: str = "What should I wear toda
             items=[],
             reasoning="Technical issue occurred during outfit generation. Your wardrobe data may be temporarily unavailable.",
             occasion="casual"
-        ) 
+        )
+    finally:
+        # Clean up session if we created it
+        if db and db_session is None:
+            try:
+                db.close()
+            except Exception as e:
+                print(f"Error closing database session in recommend_outfit: {e}") 
