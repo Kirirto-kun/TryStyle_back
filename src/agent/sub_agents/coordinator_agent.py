@@ -4,8 +4,7 @@ from typing import Union, List
 from sqlalchemy.orm import Session
 from dataclasses import dataclass
 from .base import get_azure_llm, AgentResponse, ProductList, Outfit, GeneralResponse, MessageHistory
-from .search_agent import get_search_agent  # ВРЕМЕННО ОТКЛЮЧЕН - поиск в интернете
-from .catalog_search_agent import get_catalog_search_agent, search_catalog_products  # НОВЫЙ - поиск в локальном каталоге
+from .catalog_search_agent import get_catalog_search_agent, search_catalog_products  # Поиск в локальном каталоге
 from .outfit_agent import create_outfit_agent  
 from .general_agent import get_general_agent
 from src.models.chat import Message as DBMessage
@@ -184,7 +183,7 @@ async def search_products(ctx: RunContext[CoordinatorDependencies], user_message
         # Get chat history for context
         history = await get_chat_history(ctx.deps.db, ctx.deps.chat_id)
         
-        # НОВЫЙ ПОДХОД: Поиск в локальном каталоге H&M
+        # Поиск в локальном каталоге H&M
         result = await search_catalog_products(
             message=user_message,
             user_id=ctx.deps.user_id,
@@ -193,15 +192,6 @@ async def search_products(ctx: RunContext[CoordinatorDependencies], user_message
             message_history=history.to_pydantic_ai_messages()
         )
         return result
-        
-        # СТАРЫЙ ПОДХОД (временно отключен): Поиск в интернете
-        # contextual_prompt = create_contextual_prompt(user_message, history, "search")
-        # search_agent = get_search_agent()
-        # result = await search_agent.run(
-        #     contextual_prompt,
-        #     message_history=history.to_pydantic_ai_messages()
-        # )
-        # return result.data
         
     except Exception as e:
         print(f"Error in search_products (catalog search): {e}")
