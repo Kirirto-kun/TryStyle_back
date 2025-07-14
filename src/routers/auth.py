@@ -4,12 +4,14 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 from src.database import get_db
 from src.models.user import User
-from src.schemas.user import UserCreate, UserResponse, Token
+from src.models.store import Store
+from src.schemas.user import UserCreate, UserResponse, Token, CurrentUserResponse
 from src.utils.auth import (
     verify_password,
     get_password_hash,
     create_access_token,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    get_current_user
 )
 from src.utils.email import (
     send_verification_email,
@@ -125,3 +127,39 @@ async def google_login(payload: GoogleLoginRequest = Body(...), db: Session = De
         return {"access_token": access_token, "token_type": "bearer"}
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid Google token") 
+
+@router.get("/me", response_model=CurrentUserResponse)
+async def get_current_user_info(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Получить информацию о текущем авторизованном пользователе"""
+    
+    # Получаем информацию о магазине если пользователь - админ магазина
+    managed_store = None
+    if current_user.is_store_admin and current_user.store_id:
+        store = db.query(Store).filter(Store.id == current_user.store_id).first()
+        if store:
+            managed_store = {
+                "id": store.id,
+                "name": store.name,
+                "city": store.city,
+                "logo_url": store.logo_url,
+                "rating": store.rating
+            }
+    
+    return CurrentUserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        username=current_user.username,
+        is_active=current_user.is_active,
+        created_at=current_user.created_at,
+        updated_at=current_user.updated_at,
+        role=current_user.role.value.upper() if current_user.role else "USER",
+        store_id=current_user.store_id,
+        phone=current_user.phone,
+        is_store_admin=current_user.is_store_admin,
+        is_admin=current_user.is_admin,
+        can_manage_stores=current_user.can_manage_stores,
+        managed_store=managed_store
+    ) 

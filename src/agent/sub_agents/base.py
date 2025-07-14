@@ -246,6 +246,21 @@ class AgentResponse(BaseModel):
         ge=0.0,
         description="Time taken to process the request in milliseconds"
     )
+    input_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Number of tokens in the input message"
+    )
+    output_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Number of tokens in the output response"
+    )
+    total_tokens: int = Field(
+        default=0,
+        ge=0,
+        description="Total number of tokens used (input + output)"
+    )
 
 
 def get_azure_llm() -> OpenAIModel:

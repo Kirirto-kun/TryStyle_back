@@ -123,6 +123,14 @@ QUALITY GUARANTEE:
             if output.processing_time_ms < 0:
                 output.processing_time_ms = 0.0
             
+            # Ensure token counts are valid (they will be updated later in process_user_request)
+            if not hasattr(output, 'input_tokens') or output.input_tokens < 0:
+                output.input_tokens = 0
+            if not hasattr(output, 'output_tokens') or output.output_tokens < 0:
+                output.output_tokens = 0
+            if not hasattr(output, 'total_tokens') or output.total_tokens < 0:
+                output.total_tokens = 0
+            
             return output
     
     return _coordinator_agent_instance
@@ -355,5 +363,8 @@ async def coordinate_request(message: str, user_id: int, db: Session, chat_id: i
         return AgentResponse(
             result=error_response,
             agent_type="general",
-            processing_time_ms=processing_time
+            processing_time_ms=processing_time,
+            input_tokens=0,
+            output_tokens=0,
+            total_tokens=0
         ) 

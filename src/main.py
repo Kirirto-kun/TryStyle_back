@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 from src.database import engine, Base
-from src.routers import auth, agent_router, wardrobe, waitlist, chat, tryon, stores, products, reviews, admin
+from src.routers import auth, agent_router, wardrobe, waitlist, chat, tryon, stores, products, reviews, admin, store_admin
 import os
 
 # NOTE: Таблицы теперь создаются через миграции Alembic
@@ -71,6 +71,7 @@ app.include_router(reviews.router, prefix="/api/v1")
 
 # Административные роутеры
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(store_admin.router, prefix="/api/v1")
 
 @app.get("/")
 async def root():

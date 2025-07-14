@@ -58,6 +58,5 @@ def get_connection_pool_status():
         "checked_in_connections": pool.checkedin(),
         "checked_out_connections": pool.checkedout(),
         "overflow_connections": pool.overflow(),
-        "invalidated_connections": pool.invalidated(),
         "total_capacity": pool.size() + pool.overflow()
     }

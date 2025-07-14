@@ -13,6 +13,7 @@ from src.schemas.store import (
 )
 from src.schemas.product import ProductBrief, ProductListResponse
 from src.utils.auth import get_current_user
+from src.utils.roles import require_admin
 from src.models.user import User
 
 router = APIRouter(prefix="/stores", tags=["stores"])
@@ -248,9 +249,9 @@ async def get_store_stats(store_id: int, db: Session = Depends(get_db)):
 async def create_store(
     store_data: StoreCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin())
 ):
-    """Создать новый магазин (для админов)"""
+    """Создать новый магазин (только для суперадминов)"""
     
     # Проверяем, не существует ли уже магазин с таким названием в этом городе
     existing_store = db.query(Store).filter(
@@ -279,9 +280,9 @@ async def update_store(
     store_id: int,
     store_data: StoreUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin())
 ):
-    """Обновить информацию о магазине (для админов)"""
+    """Обновить информацию о магазине (только для суперадминов)"""
     
     store = db.query(Store).filter(Store.id == store_id).first()
     if not store:

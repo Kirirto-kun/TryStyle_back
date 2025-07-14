@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, asc, and_, or_
 from typing import List, Optional
@@ -13,6 +13,7 @@ from src.schemas.product import (
     ProductSearchQuery, CategoryResponse, CategoriesListResponse, ProductStatsResponse
 )
 from src.utils.auth import get_current_user
+from src.utils.roles import check_store_access, UserRole
 from src.models.user import User
 
 router = APIRouter(prefix="/products", tags=["products"])
@@ -363,6 +364,22 @@ async def create_product(
 ):
     """Создать новый товар (для админов/магазинов)"""
     
+    # Проверяем права пользователя
+    user_role = getattr(current_user, 'role', UserRole.USER)
+    if user_role == UserRole.USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Store admin or admin privileges required."
+        )
+    
+    # Для админа магазина проверяем доступ к конкретному магазину
+    if user_role == UserRole.STORE_ADMIN:
+        if not check_store_access(current_user, product_data.store_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. You can only add products to your own store."
+            )
+    
     # Проверяем существование магазина
     store = db.query(Store).filter(Store.id == product_data.store_id).first()
     if not store:
@@ -376,10 +393,10 @@ async def create_product(
     db.commit()
     db.refresh(product)
     
-    logger.info(f"Создан новый товар: {product.name} в магазине {store.name}")
+    logger.info(f"User {current_user.username} ({user_role.value}) created product: {product.name} in store {store.name}")
     
     # Возвращаем полный ответ
-    product_data = {
+    product_response_data = {
         **product.__dict__,
         'price_info': product.price_display,
         'discount_percentage': product.discount_percentage,
@@ -393,7 +410,7 @@ async def create_product(
         }
     }
     
-    return ProductResponse(**product_data)
+    return ProductResponse(**product_response_data)
 
 
 @router.put("/{product_id}", response_model=ProductResponse)
@@ -409,6 +426,22 @@ async def update_product(
     if not product:
         raise HTTPException(status_code=404, detail="Товар не найден")
     
+    # Проверяем права пользователя
+    user_role = getattr(current_user, 'role', UserRole.USER)
+    if user_role == UserRole.USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Store admin or admin privileges required."
+        )
+    
+    # Для админа магазина проверяем доступ к конкретному магазину
+    if user_role == UserRole.STORE_ADMIN:
+        if not check_store_access(current_user, product.store_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. You can only manage products in your own store."
+            )
+    
     # Обновляем только переданные поля
     for field, value in product_data.model_dump(exclude_unset=True).items():
         setattr(product, field, value)
@@ -416,7 +449,7 @@ async def update_product(
     db.commit()
     db.refresh(product)
     
-    logger.info(f"Обновлен товар: {product.name}")
+    logger.info(f"User {current_user.username} ({user_role.value}) updated product: {product.name}")
     
     # Возвращаем полный ответ
     product_response_data = {

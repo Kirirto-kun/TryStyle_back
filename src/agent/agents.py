@@ -1,6 +1,7 @@
 import json
 from sqlalchemy.orm import Session
 from src.agent.sub_agents.coordinator_agent import coordinate_request
+from src.utils.token_counter import count_message_tokens
 
 
 async def process_user_request(
@@ -41,7 +42,16 @@ async def process_user_request(
         if not hasattr(response, 'result') or not hasattr(response, 'agent_type'):
             raise ValueError("Invalid response structure from coordinator")
 
-        # Format and return the validated response
+        # Count tokens for input and output
+        response_json = response.model_dump_json(indent=2)
+        token_counts = count_message_tokens(message, response_json)
+        
+        # Add token information to the response
+        response.input_tokens = token_counts["input_tokens"]
+        response.output_tokens = token_counts["output_tokens"] 
+        response.total_tokens = token_counts["total_tokens"]
+
+        # Format and return the validated response with token counts
         return response.model_dump_json(indent=2)
         
     except Exception as e:
@@ -53,14 +63,22 @@ async def process_user_request(
         # Return a properly structured error response as fallback
         from src.agent.sub_agents.base import AgentResponse, GeneralResponse
         
+        error_response_text = "I apologize, but I encountered a critical error while processing your request. Please try again, and if the problem persists, contact support."
+        
+        # Count tokens even for error responses
+        token_counts = count_message_tokens(message, error_response_text)
+        
         error_response = AgentResponse(
             result=GeneralResponse(
-                response="I apologize, but I encountered a critical error while processing your request. Please try again, and if the problem persists, contact support.",
+                response=error_response_text,
                 response_type="error",
                 confidence=0.9
             ),
             agent_type="general",
-            processing_time_ms=0.0
+            processing_time_ms=0.0,
+            input_tokens=token_counts["input_tokens"],
+            output_tokens=token_counts["output_tokens"],
+            total_tokens=token_counts["total_tokens"]
         )
         
         return error_response.model_dump_json(indent=2)

@@ -23,6 +23,26 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True
 
+class CurrentUserResponse(UserBase):
+    id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    role: str
+    store_id: Optional[int] = None
+    phone: Optional[str] = None
+    
+    # Computed properties
+    is_store_admin: bool = False
+    is_admin: bool = False
+    can_manage_stores: bool = False
+    
+    # Store information if user is store admin
+    managed_store: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
 class Token(BaseModel):
     access_token: str
     token_type: str
