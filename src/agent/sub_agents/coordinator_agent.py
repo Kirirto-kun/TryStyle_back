@@ -56,7 +56,6 @@ ROUTING DECISION LOGIC WITH CONTEXT:
 Analyze the user's message AND conversation history to determine the appropriate agent:
 
 1. CATALOG SEARCH AGENT ("search") - Use search_products tool for:
-   - Finding products in H&M Kazakhstan catalog (Almaty, Aktobe)
    - Looking for specific clothing items, brands, categories
    - Price queries, size/color searches in local catalog
    - Style recommendations and outfit coordination

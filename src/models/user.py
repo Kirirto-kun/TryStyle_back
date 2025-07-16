@@ -41,7 +41,7 @@ class User(Base):
     chats = relationship("Chat", back_populates="user", cascade="all, delete-orphan")
     
     # Relationship with Review
-    reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
+    reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan") 
     
     # Relationship with Store (для админов магазинов)
     managed_store = relationship("Store", foreign_keys=[store_id], post_update=True)

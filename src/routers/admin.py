@@ -281,7 +281,7 @@ async def get_users_count(current_user: User = Depends(require_admin()), db: Ses
     return SimpleUserCount(
         total_users=total_users, 
         active_users=active_users
-    )
+        )
 
 @router.get("/users/stats", response_model=UserStats)
 async def get_users_stats(current_user: User = Depends(require_admin()), db: Session = Depends(get_db)):
@@ -328,14 +328,14 @@ async def get_users_stats(current_user: User = Depends(require_admin()), db: Ses
         )
     
     return UserStats(
-        total_users=total_users,
-        active_users=active_users,
-        inactive_users=inactive_users,
-        users_last_24h=users_last_24h,
-        users_last_week=users_last_week,
-        users_last_month=users_last_month,
-        users_with_phone=users_with_phone,
-        first_user=first_user_data,
+    total_users=total_users,
+    active_users=active_users,
+    inactive_users=inactive_users,
+    users_last_24h=users_last_24h,
+    users_last_week=users_last_week,
+    users_last_month=users_last_month,
+    users_with_phone=users_with_phone,
+    first_user=first_user_data,
         latest_user=latest_user_data,
         active_percentage=round((active_users / total_users * 100) if total_users > 0 else 0, 1),
         phone_percentage=round((users_with_phone / total_users * 100) if total_users > 0 else 0, 1)
@@ -345,9 +345,9 @@ async def get_users_stats(current_user: User = Depends(require_admin()), db: Ses
 async def get_detailed_users_stats(current_user: User = Depends(require_admin()), db: Session = Depends(get_db)):
     """Получить расширенную статистику пользователей с трендами"""
     
-    # Получаем базовую статистику
+        # Получаем базовую статистику
     basic_stats = await get_users_stats(current_user, db)
-    
+        
     # Тренд регистраций за последние 7 дней
     registration_trend = []
     for i in range(7):
@@ -379,12 +379,12 @@ async def get_detailed_users_stats(current_user: User = Depends(require_admin())
         )
         for user in recent_users
     ]
-    
+        
     return DetailedUserStats(
         basic_stats=basic_stats,
-        registration_trend=registration_trend,
+            registration_trend=registration_trend,
         recent_users=recent_users_list
-    )
+        )
 
 @router.get("/database/status", response_model=DatabaseStatus)
 async def get_database_status(current_user: User = Depends(require_admin()), db: Session = Depends(get_db)):
@@ -407,10 +407,10 @@ async def get_database_status(current_user: User = Depends(require_admin()), db:
         # Считаем общее количество таблиц
         try:
             result = db.execute(text("""
-                SELECT COUNT(*) 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public'
-            """))
+            SELECT COUNT(*) 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+        """))
             total_tables = result.scalar() or 0
         except:
             total_tables = 0
@@ -480,7 +480,7 @@ async def get_recent_users(
 ):
     """Получить последних зарегистрированных пользователей"""
     recent_users = db.query(User).order_by(User.created_at.desc()).limit(limit).all()
-    
+        
     return [
         UserBrief(
             id=user.id,

@@ -3,6 +3,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, asc, and_
 from typing import List, Optional
 import logging
+import base64
+import uuid
+import asyncio
 from datetime import datetime, timedelta
 
 from src.database import get_db
@@ -13,11 +16,13 @@ from src.models.review import Review
 from src.schemas.store_admin import (
     StoreAdminDashboard, StoreProductStats, StoreAdminSettings,
     StoreAnalytics, StoreAdminProductCreate, StoreAdminProductUpdate,
-    LowStockAlert
+    LowStockAlert, PhotoProductUpload
 )
 from src.schemas.product import ProductResponse, ProductListResponse, ProductBrief
 from src.utils.auth import get_current_user
 from src.utils.roles import check_store_access, UserRole
+from src.utils.firebase_storage import upload_image_to_firebase_async
+from src.utils.analyze_image import analyze_image
 
 router = APIRouter(prefix="/store-admin", tags=["store-admin"])
 logger = logging.getLogger(__name__)
@@ -552,4 +557,135 @@ async def update_store_settings(
     
     logger.info(f"Store admin {current_user.username} updated store settings for {store.name}")
     
-    return {"message": "Store settings updated successfully"} 
+    return {"message": "Store settings updated successfully"}
+
+
+@router.post("/products/upload-photos", response_model=ProductResponse)
+async def create_product_from_photos(
+    upload_data: PhotoProductUpload,
+    current_user: User = Depends(get_store_admin_user),
+    db: Session = Depends(get_db)
+):
+    """Создать товар через загрузку фотографий с AI анализом"""
+    
+    # Определяем магазин админа
+    if current_user.role == UserRole.ADMIN:
+        # Суперадмин может выбрать магазин (пока берем первый)
+        store = db.query(Store).first()
+        if not store:
+            raise HTTPException(status_code=404, detail="No stores found")
+        store_id = store.id
+    else:
+        if not current_user.store_id:
+            raise HTTPException(status_code=400, detail="Store admin must be assigned to a store")
+        store_id = current_user.store_id
+        store = db.query(Store).filter(Store.id == store_id).first()
+        if not store:
+            raise HTTPException(status_code=404, detail="Store not found")
+
+    uploaded_image_urls = []
+    
+    try:
+        logger.info(f"Store admin {current_user.username} uploading {len(upload_data.images_base64)} photos for new product")
+        
+        # 1. Загружаем все изображения в Firebase параллельно
+        upload_tasks = []
+        for i, image_base64 in enumerate(upload_data.images_base64):
+            try:
+                # Декодируем base64 изображение
+                img_bytes = base64.b64decode(image_base64.split(",")[-1])
+                
+                # Генерируем уникальное имя файла
+                file_name = f"product_{store_id}_{uuid.uuid4()}_{i}.png"
+                
+                # Создаем задачу загрузки
+                upload_task = upload_image_to_firebase_async(img_bytes, file_name)
+                upload_tasks.append(upload_task)
+                
+            except Exception as e:
+                logger.error(f"Error processing image {i}: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to process image {i+1}: invalid base64 format"
+                )
+        
+        # Загружаем все изображения параллельно
+        uploaded_image_urls = await asyncio.gather(*upload_tasks)
+        logger.info(f"Successfully uploaded {len(uploaded_image_urls)} images to Firebase")
+        
+        # 2. Анализируем первое изображение через GPT Azure
+        analysis = await analyze_image(uploaded_image_urls[0])
+        logger.info(f"GPT analysis completed: {analysis}")
+        
+        # 3. Определяем название товара
+        if upload_data.name:
+            # Используем название от фронтенда (приоритет)
+            product_name = upload_data.name
+            logger.info(f"Using name from frontend: {product_name}")
+        else:
+            # Используем название от GPT
+            product_name = analysis.get("name", "Новый товар")
+            logger.info(f"Using GPT generated name: {product_name}")
+        
+        # 4. Фильтруем features от GPT (убираем None значения)
+        features = [f for f in analysis.get("features", []) if f is not None and isinstance(f, str)]
+        
+        # 5. Создаем товар в базе данных
+        product_data = {
+            "name": product_name,
+            "description": f"Товар добавлен через фото. {analysis.get('description', '')}".strip(),
+            "price": upload_data.price,
+            "original_price": upload_data.original_price,
+            "category": analysis.get("category", "other"),
+            "brand": store.name,  # Название магазина как бренд
+            "features": features,  # Характеристики от GPT
+            "sizes": upload_data.sizes,  # От фронтенда
+            "colors": upload_data.colors,  # От фронтенда
+            "image_urls": uploaded_image_urls,  # URL изображений из Firebase
+            "stock_quantity": upload_data.stock_quantity,
+            "store_id": store_id,
+            "is_active": True
+        }
+        
+        product = Product(**product_data)
+        db.add(product)
+        db.commit()
+        db.refresh(product)
+        
+        logger.info(f"Successfully created product: {product.name} (ID: {product.id}) in store {store.name}")
+        
+        # 6. Возвращаем полный ответ
+        return ProductResponse(
+            **product.__dict__,
+            price_info=product.price_display,
+            discount_percentage=product.discount_percentage,
+            is_in_stock=product.is_in_stock,
+            store={
+                "id": store.id,
+                "name": store.name,
+                "city": store.city,
+                "logo_url": store.logo_url,
+                "rating": store.rating
+            }
+        )
+        
+    except HTTPException:
+        # Переподнимаем HTTP исключения
+        raise
+    except Exception as e:
+        logger.error(f"Error creating product from photos: {str(e)}")
+        
+        # В случае ошибки пытаемся удалить загруженные изображения
+        if uploaded_image_urls:
+            try:
+                from src.utils.firebase_storage import delete_image_from_firebase_async
+                delete_tasks = [delete_image_from_firebase_async(url) for url in uploaded_image_urls]
+                await asyncio.gather(*delete_tasks, return_exceptions=True)
+                logger.info("Cleaned up uploaded images after error")
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup images: {cleanup_error}")
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create product: {str(e)}"
+        ) 

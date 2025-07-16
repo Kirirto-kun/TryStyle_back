@@ -22,6 +22,62 @@ class CatalogSearchDependencies:
 # Cached catalog search agent instance
 _catalog_search_agent_instance = None
 
+async def get_full_catalog_for_llm(db: Session) -> str:
+    """
+    Получить весь каталог товаров в текстовом формате для анализа LLM.
+    
+    Returns:
+        str: Полное описание каталога для LLM
+    """
+    try:
+        # Импортируем все модели для избежания ошибок SQLAlchemy
+        from src.models.review import Review
+        from src.models.user import User
+        from src.models.clothing import ClothingItem
+        from src.models.chat import Chat, Message
+        from src.models.tryon import TryOn
+        from src.models.waitlist import WaitListItem
+        
+        # Получаем ВСЕ активные товары с информацией о магазинах
+        products = db.query(DBProduct).join(DBStore).filter(
+            DBProduct.is_active == True,
+            DBProduct.stock_quantity > 0
+        ).order_by(DBProduct.name).all()
+        
+        if not products:
+            return "КАТАЛОГ ПУСТ: Нет товаров в наличии."
+        
+        catalog_text = f"ПОЛНЫЙ КАТАЛОГ H&M КАЗАХСТАН ({len(products)} товаров):\n\n"
+        
+        for i, product in enumerate(products, 1):
+            # Форматируем цену
+            price_str = f"₸{product.price:,.0f}"
+            if product.original_price and product.original_price > product.price:
+                price_str += f" (было ₸{product.original_price:,.0f})"
+            
+            # Форматируем размеры и цвета
+            sizes_str = ", ".join(product.sizes) if product.sizes else "Уточнить"
+            colors_str = ", ".join(product.colors) if product.colors else "Уточнить"
+            
+            # Добавляем товар в каталог
+            catalog_text += f"{i}. {product.name}\n"
+            catalog_text += f"   Цена: {price_str}\n"
+            catalog_text += f"   Категория: {product.category}\n"
+            catalog_text += f"   Бренд: {product.brand or 'H&M'}\n"
+            catalog_text += f"   Описание: {product.description or 'Стильная вещь от H&M'}\n"
+            catalog_text += f"   Размеры: {sizes_str}\n"
+            catalog_text += f"   Цвета: {colors_str}\n"
+            catalog_text += f"   Магазин: {product.store.name}, {product.store.city}\n"
+            catalog_text += f"   В наличии: {product.stock_quantity} шт\n"
+            if product.features:
+                catalog_text += f"   Особенности: {', '.join(product.features)}\n"
+            catalog_text += f"   Рейтинг: {product.rating}/5.0\n\n"
+        
+        return catalog_text
+        
+    except Exception as e:
+        return f"ОШИБКА ПОЛУЧЕНИЯ КАТАЛОГА: {e}"
+
 def get_catalog_search_agent() -> Agent:
     """
     Returns a catalog search agent that searches products in the local database.
@@ -34,47 +90,45 @@ def get_catalog_search_agent() -> Agent:
             get_azure_llm(),
             deps_type=CatalogSearchDependencies,
             output_type=ProductList,
-            tools=[search_internal_catalog, recommend_styling_items],
-            system_prompt="""You are a specialized catalog search agent for H&M fashion store in Kazakhstan.
+            tools=[],  # Убираем tools - каталог передается напрямую в промпте
+            system_prompt="""Вы - агент поиска товаров в каталоге H&M Казахстан.
 
-Your job is to help users find clothing items from the local H&M catalog in Almaty and Aktobe.
+ФОРМАТ ВХОДНЫХ ДАННЫХ:
+Вы получите сообщение в формате:
+```
+ЗАПРОС ПОЛЬЗОВАТЕЛЯ: [запрос]
 
-CATALOG INFORMATION:
-- You have access to H&M products in Kazakhstan
-- All prices are in Kazakhstani Tenge (₸)
-- Stores located in Almaty and Aktobe
-- Product categories: Shirts, Shorts, Pants, Jackets, T-shirts, Sportswear, Sweaters, etc.
-- Brands: Primarily H&M products
-- Real product images and detailed descriptions available
+ПОЛНЫЙ КАТАЛОГ H&M КАЗАХСТАН (N товаров):
+1. [Название товара]
+   Цена: ₸[цена]
+   Категория: [категория]
+   Описание: [описание]
+   Магазин: [магазин, город]
+   ...
+```
 
-REQUEST TYPES TO HANDLE:
+ВАША ЗАДАЧА:
+1. Прочитайте запрос пользователя
+2. Найдите в каталоге наиболее подходящие товары (5-8 штук максимум)
+3. Верните результат в формате ProductList
 
-1. DIRECT PRODUCT SEARCH:
-   - "I want business pants" → search for formal/business pants
-   - "Looking for a warm jacket" → search for jackets with warm descriptions
-   - "Need a black t-shirt" → search by color and category
-   - Use search_internal_catalog tool
+КРИТЕРИИ ПОИСКА:
+- Семантическое соответствие запросу
+- Категория товара (брюки, рубашки, куртки, etc)
+- Цвет (если указан)
+- Стиль (деловой, спортивный, casual)
+- Повод (работа, отдых, спорт)
 
-2. STYLING RECOMMENDATIONS:
-   - "What goes well with a black t-shirt?" → find complementary items
-   - "What can I style with this item?" → suggest matching pieces
-   - "Complete this outfit" → find missing pieces
-   - Use recommend_styling_items tool
+ПРИМЕРЫ:
+- "деловые брюки" → ищите в категории "Брюки" со словами "деловой", "костюмный", "классический"
+- "теплая куртка" → ищите в категории "Куртки" со словами "теплый", "зимний", "утепленный"
+- "черная футболка" → ищите в категории "Футболки" с цветом "черный"
 
-SEARCH STRATEGY:
-- Analyze user's request to understand: item type, color, style, occasion
-- Search by: name, description, category, brand, colors
-- Consider: price range, sizes available, stock status
-- Prioritize items that best match the user's needs
-- Return maximum 10 most relevant items
-
-RESPONSE FORMAT:
-- Always return ProductList with relevant items from local catalog
-- Include product names, prices in Tenge, descriptions, and image URLs
-- Explain why each item matches the user's request
-- Mention store availability (Almaty/Aktobe)
-
-Remember: Only search in the local H&M catalog, never external sources.""",
+ВАЖНО:
+- Возвращайте ТОЛЬКО релевантные товары (не весь каталог!)
+- Максимум 8 товаров в ответе
+- Если не нашли подходящих товаров - верните пустой список
+- Всегда объясняйте в описании, почему товар подходит""",
             retries=3
         )
         
@@ -105,82 +159,63 @@ Remember: Only search in the local H&M catalog, never external sources.""",
 async def search_internal_catalog(
     ctx: RunContext[CatalogSearchDependencies], 
     search_query: str,
-    category: Optional[str] = None,
-    color: Optional[str] = None,
-    price_max: Optional[float] = None,
-    occasion: Optional[str] = None
+    max_results: int = 10
 ) -> ProductList:
     """
-    Search for products in the internal H&M catalog database.
+    Поиск товаров в локальном каталоге H&M. 
+    LLM получает ВЕСЬ каталог и сам анализирует запрос пользователя.
     
     Args:
-        search_query: User's search query
-        category: Optional category filter (e.g., "Shirts", "Pants")
-        color: Optional color filter (e.g., "Black", "Blue") 
-        price_max: Optional maximum price filter
-        occasion: Optional occasion filter (e.g., "business", "casual")
+        search_query: Запрос пользователя
+        max_results: Максимальное количество результатов (по умолчанию 10)
         
     Returns:
-        ProductList: List of matching products from local catalog
+        ProductList: Список подходящих товаров из каталога
     """
     try:
         db = ctx.deps.db
-        print(f"🔍 Searching internal catalog for: {search_query}")
+        print(f"🔍 Анализируем запрос в полном каталоге: {search_query}")
         
-        # Build base query with active products and store info
-        query_obj = db.query(DBProduct).join(DBStore).filter(
+        # Получаем ВЕСЬ каталог для анализа LLM
+        full_catalog = await get_full_catalog_for_llm(db)
+        print(f"📦 Каталог загружен для LLM анализа")
+        
+        # Получаем все активные товары для последующего создания ответа
+        all_products = db.query(DBProduct).join(DBStore).filter(
             DBProduct.is_active == True,
-            DBProduct.stock_quantity > 0  # Only in-stock items
-        )
+            DBProduct.stock_quantity > 0
+        ).order_by(DBProduct.name).all()
         
-        # Text search across multiple fields
-        if search_query:
-            search_terms = search_query.lower().strip()
-            search_filter = or_(
-                DBProduct.name.ilike(f"%{search_terms}%"),
-                DBProduct.description.ilike(f"%{search_terms}%"),
-                DBProduct.category.ilike(f"%{search_terms}%"),
-                DBProduct.brand.ilike(f"%{search_terms}%")
-            )
-            query_obj = query_obj.filter(search_filter)
+        print(f"   Всего товаров для анализа: {len(all_products)}")
         
-        # Apply filters
-        if category:
-            query_obj = query_obj.filter(DBProduct.category.ilike(f"%{category}%"))
-            
-        if color:
-            # Search in colors JSON array
-            query_obj = query_obj.filter(
-                func.lower(func.cast(DBProduct.colors, db.Text)).like(f"%{color.lower()}%")
-            )
-            
-        if price_max:
-            query_obj = query_obj.filter(DBProduct.price <= price_max)
+        # LLM должен проанализировать весь каталог и найти подходящие товары
+        # Добавляем каталог в контекст сообщения
+        analysis_prompt = f"""
+ЗАПРОС ПОЛЬЗОВАТЕЛЯ: "{search_query}"
+
+{full_catalog}
+
+ЗАДАЧА: Проанализируйте запрос пользователя и выберите наиболее подходящие товары из приведенного выше каталога. 
+Учитывайте семантическое сходство, стиль, категорию, цвет, повод и другие характеристики.
+Максимум {max_results} товаров в порядке релевантности.
+"""
         
-        # Sort by relevance (rating desc, then by price asc)
-        query_obj = query_obj.order_by(desc(DBProduct.rating), asc(DBProduct.price))
-        
-        # Limit results
-        db_products = query_obj.limit(10).all()
-        
-        print(f"   Found {len(db_products)} matching products")
-        
-                 # Convert to Product schema format with full information
-        products = []
-        for db_product in db_products:
-            # Format prices in Tenge
+        # Создаем список всех товаров для возврата (LLM выберет подходящие)
+        all_products_for_return = []
+        for db_product in all_products:
+            # Форматируем цену
             price_str = f"₸{db_product.price:,.0f}"
             original_price_str = None
             if db_product.original_price and db_product.original_price > db_product.price:
                 original_price_str = f"₸{db_product.original_price:,.0f}"
             
-            # Create product object with full catalog information
+            # Создаем объект товара
             product = Product(
                 name=db_product.name,
                 price=price_str,
                 description=db_product.description or "Стильная вещь от H&M",
-                link=f"/products/{db_product.id}",  # Internal link
-                image_urls=db_product.image_urls or [],  # Product images for frontend
+                link=f"/products/{db_product.id}",
+                image_urls=db_product.image_urls or [],
                 original_price=original_price_str,
                 store_name=db_product.store.name,
                 store_city=db_product.store.city,
@@ -188,16 +223,20 @@ async def search_internal_catalog(
                 colors=db_product.colors or [],
                 in_stock=db_product.stock_quantity > 0
             )
-            products.append(product)
+            all_products_for_return.append(product)
+        
+        # Возвращаем все товары - LLM сам выберет подходящие
+        # Добавляем информацию о каталоге в поисковый запрос для LLM
+        enhanced_search_query = f"{search_query} [КАТАЛОГ: {len(all_products)} товаров H&M]"
         
         return ProductList(
-            products=products,
-            search_query=search_query,
-            total_found=len(db_products)
+            products=all_products_for_return,
+            search_query=enhanced_search_query,
+            total_found=len(all_products_for_return)
         )
         
     except Exception as e:
-        print(f"❌ Error searching internal catalog: {e}")
+        print(f"❌ Ошибка поиска в каталоге: {e}")
         return ProductList(
             products=[],
             search_query=search_query,
@@ -211,81 +250,43 @@ async def recommend_styling_items(
     style_type: str = "casual"
 ) -> ProductList:
     """
-    Recommend items from catalog that would style well with a given base item.
+    Рекомендация товаров из каталога для стилизации с базовой вещью.
+    LLM получает ВЕСЬ каталог и сам выбирает подходящие для стилизации товары.
     
     Args:
-        base_item: The item to create styling recommendations for
-        style_type: Style preference (casual, business, evening, etc.)
+        base_item: Базовая вещь для создания стилизации
+        style_type: Предпочтение стиля (casual, business, evening, etc.)
         
     Returns:
-        ProductList: Recommended styling items from catalog
+        ProductList: Рекомендованные товары для стилизации из каталога
     """
     try:
         db = ctx.deps.db
-        print(f"🎨 Finding styling recommendations for: {base_item}")
+        print(f"🎨 Ищем стилизацию для: {base_item} (стиль: {style_type})")
         
-        # Analyze base item to determine what complements it
-        base_lower = base_item.lower()
+        # Получаем ВЕСЬ каталог для анализа LLM
+        full_catalog = await get_full_catalog_for_llm(db)
+        print(f"📦 Каталог загружен для стилизации")
         
-        # Define styling rules
-        styling_suggestions = []
+        # Получаем все активные товары для создания рекомендаций
+        all_products = db.query(DBProduct).join(DBStore).filter(
+            DBProduct.is_active == True,
+            DBProduct.stock_quantity > 0
+        ).order_by(desc(DBProduct.rating), DBProduct.name).all()
         
-        if any(word in base_lower for word in ["футболка", "t-shirt", "майка"]):
-            # For t-shirts, suggest: jackets, pants, shorts
-            styling_suggestions = ["куртка", "джинсы", "брюки", "шорты", "пиджак"]
-        elif any(word in base_lower for word in ["рубашка", "shirt"]):
-            # For shirts, suggest: pants, jackets, sweaters
-            styling_suggestions = ["брюки", "джинсы", "куртка", "джемпер"]
-        elif any(word in base_lower for word in ["брюки", "pants", "джинсы"]):
-            # For pants, suggest: shirts, t-shirts, jackets
-            styling_suggestions = ["рубашка", "футболка", "куртка", "джемпер"]
-        elif any(word in base_lower for word in ["куртка", "jacket"]):
-            # For jackets, suggest: shirts, pants, t-shirts
-            styling_suggestions = ["рубашка", "футболка", "брюки", "джинсы"]
-        else:
-            # Default suggestions
-            styling_suggestions = ["рубашка", "брюки", "куртка", "футболка"]
+        print(f"   Анализируем {len(all_products)} товаров для стилизации")
         
-        # Search for complementary items
-        all_products = []
-        
-        for suggestion in styling_suggestions[:3]:  # Top 3 categories
-            query_obj = db.query(DBProduct).join(DBStore).filter(
-                DBProduct.is_active == True,
-                DBProduct.stock_quantity > 0,
-                or_(
-                    DBProduct.name.ilike(f"%{suggestion}%"),
-                    DBProduct.category.ilike(f"%{suggestion}%"),
-                    DBProduct.description.ilike(f"%{suggestion}%")
-                )
-            ).order_by(desc(DBProduct.rating)).limit(3)
-            
-            products = query_obj.all()
-            all_products.extend(products)
-        
-        # Remove duplicates and limit
-        seen_ids = set()
-        unique_products = []
-        for product in all_products:
-            if product.id not in seen_ids:
-                unique_products.append(product)
-                seen_ids.add(product.id)
-        
-        unique_products = unique_products[:8]  # Max 8 recommendations
-        
-        print(f"   Found {len(unique_products)} styling recommendations")
-        
-                 # Convert to Product schema format with full styling information
-        recommendations = []
-        for db_product in unique_products:
-            # Format prices
+        # Создаем список всех товаров для стилизации
+        all_styling_products = []
+        for db_product in all_products:
+            # Форматируем цену
             price_str = f"₸{db_product.price:,.0f}"
             original_price_str = None
             if db_product.original_price and db_product.original_price > db_product.price:
                 original_price_str = f"₸{db_product.original_price:,.0f}"
             
-            # Add styling context to description
-            style_desc = f"Отлично сочетается с {base_item}. {db_product.description or 'Стильная вещь от H&M'}"
+            # Добавляем контекст стилизации в описание
+            style_desc = f"Подходит для стилизации с {base_item}. {db_product.description or 'Стильная вещь от H&M'}"
             
             product = Product(
                 name=db_product.name,
@@ -300,16 +301,19 @@ async def recommend_styling_items(
                 colors=db_product.colors or [],
                 in_stock=db_product.stock_quantity > 0
             )
-            recommendations.append(product)
+            all_styling_products.append(product)
+        
+        # Формируем запрос для LLM анализа
+        styling_query = f"Стилизация для: {base_item} (стиль: {style_type}) [КАТАЛОГ: {len(all_products)} товаров]"
         
         return ProductList(
-            products=recommendations,
-            search_query=f"Стилизация для: {base_item}",
-            total_found=len(recommendations)
+            products=all_styling_products,
+            search_query=styling_query,
+            total_found=len(all_styling_products)
         )
         
     except Exception as e:
-        print(f"❌ Error getting styling recommendations: {e}")
+        print(f"❌ Ошибка получения рекомендаций стилизации: {e}")
         return ProductList(
             products=[],
             search_query=f"Стилизация для: {base_item}",
@@ -325,40 +329,68 @@ async def search_catalog_products(
     message_history: List[ModelMessage] = None
 ) -> ProductList:
     """
-    Main entry point for catalog search with conversation context.
+    Главная точка входа для поиска в каталоге с контекстом беседы.
+    Получает ВЕСЬ каталог и отправляет его LLM для анализа запроса пользователя.
     
     Args:
-        message: User's search message
-        user_id: User ID
-        db: Database session
-        chat_id: Chat ID
-        message_history: Previous conversation for context
+        message: Сообщение пользователя для поиска
+        user_id: ID пользователя
+        db: Сессия базы данных
+        chat_id: ID чата
+        message_history: Предыдущая беседа для контекста
         
     Returns:
-        ProductList: Search results from internal catalog
+        ProductList: Результаты поиска из внутреннего каталога
     """
     try:
-        # Create dependencies
+        print(f"🛍️ Начинаем поиск в каталоге H&M: {message}")
+        
+        # Получаем ПОЛНЫЙ каталог для анализа LLM
+        full_catalog = await get_full_catalog_for_llm(db)
+        print(f"📦 Каталог получен для LLM анализа")
+        
+        # Создаем расширенное сообщение с каталогом
+        enhanced_message = f"""
+ЗАПРОС ПОЛЬЗОВАТЕЛЯ: {message}
+
+{full_catalog}
+
+ЗАДАЧА: Проанализируйте запрос пользователя "{message}" и найдите наиболее подходящие товары из приведенного выше каталога H&M. 
+
+Учитывайте:
+- Семантическое сходство с запросом
+- Категорию и тип товара
+- Цвет (если указан)
+- Стиль и повод
+- Описание и характеристики товаров
+- Цену и доступность
+
+Выберите максимум 10 наиболее релевантных товаров и верните их в формате ProductList с объяснением почему каждый товар подходит под запрос.
+"""
+        
+        # Создание зависимостей
         deps = CatalogSearchDependencies(
             user_id=user_id,
             db=db,
             chat_id=chat_id
         )
         
-        # Get catalog search agent
+        # Получаем агент поиска в каталоге
         catalog_agent = get_catalog_search_agent()
         
-        # Run the agent with conversation context
+        # Запускаем агент с расширенным сообщением включающим весь каталог
+        print(f"🤖 Отправляем запрос LLM с полным каталогом")
         result = await catalog_agent.run(
-            message,
+            enhanced_message,
             deps=deps,
             message_history=message_history or []
         )
         
+        print(f"✅ LLM проанализировал каталог и нашел товары")
         return result.data
         
     except Exception as e:
-        print(f"❌ Error in search_catalog_products: {e}")
+        print(f"❌ Ошибка в search_catalog_products: {e}")
         return ProductList(
             products=[],
             search_query=message,

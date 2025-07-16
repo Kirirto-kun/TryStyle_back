@@ -19,6 +19,7 @@ class Product(Base):
     sizes = Column(JSON, default=list)  # ["XS", "S", "M", "L", "XL"]
     colors = Column(JSON, default=list)  # ["white", "black", "red"]
     image_urls = Column(JSON, default=list)  # Массив URL изображений
+    features = Column(JSON, default=list)  # ["slim fit", "cotton", "long sleeves"] - характеристики от GPT
     
     # Категоризация
     category = Column(String(50), nullable=False, index=True)

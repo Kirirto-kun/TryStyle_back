@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from .user import UserResponse
@@ -151,10 +151,61 @@ class LowStockAlert(BaseModel):
     
     @property
     def is_critical(self) -> bool:
-        """Критически низкий остаток (0-1 шт)"""
-        return self.current_stock <= 1
+        """Критически низкий остаток (менее 3)"""
+        return self.current_stock < 3
     
     @property
     def is_warning(self) -> bool:
-        """Предупреждение (2-5 шт)"""
-        return 2 <= self.current_stock <= 5 
+        """Предупреждение о низком остатке"""
+        return self.current_stock <= self.threshold
+
+
+class PhotoProductUpload(BaseModel):
+    """Создание товара через загрузку фотографий"""
+    images_base64: List[str] = Field(
+        ..., 
+        min_items=1, 
+        max_items=5,
+        description="Массив base64 изображений (от 1 до 5 фото)"
+    )
+    name: Optional[str] = Field(
+        None,
+        max_length=200,
+        description="Название товара (опционально - если не указано, будет сгенерировано GPT)"
+    )
+    price: float = Field(
+        ...,
+        gt=0,
+        description="Цена товара в тенге"
+    )
+    original_price: Optional[float] = Field(
+        None,
+        gt=0,
+        description="Первоначальная цена до скидки (опционально)"
+    )
+    sizes: List[str] = Field(
+        default_factory=list,
+        description="Доступные размеры"
+    )
+    colors: List[str] = Field(
+        default_factory=list,
+        description="Доступные цвета"
+    )
+    stock_quantity: int = Field(
+        default=0,
+        ge=0,
+        description="Количество на складе"
+    )
+    
+    @validator('images_base64')
+    def validate_images(cls, v):
+        for img in v:
+            if not img.startswith('data:image/'):
+                raise ValueError('Каждое изображение должно быть в формате base64 data URL')
+        return v
+    
+    @validator('original_price')
+    def validate_original_price(cls, v, values):
+        if v is not None and 'price' in values and v <= values['price']:
+            raise ValueError('Первоначальная цена должна быть больше текущей цены')
+        return v 
