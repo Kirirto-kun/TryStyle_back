@@ -245,6 +245,61 @@ async def get_store_stats(store_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/by-slug/{store_name}", response_model=ProductListResponse)
+async def get_store_by_name_with_products(
+    store_name: str,
+    page: int = Query(1, ge=1, description="Номер страницы"),
+    per_page: int = Query(20, ge=1, le=100, description="Количество на странице"),
+    db: Session = Depends(get_db)
+):
+    """Получить магазин по имени и его товары (без авторизации)"""
+    
+    # Ищем магазин по имени (case-insensitive)
+    store = db.query(Store).filter(Store.name.ilike(store_name)).first()
+    if not store:
+        raise HTTPException(status_code=404, detail=f"Магазин '{store_name}' не найден")
+    
+    # Получаем активные товары магазина
+    query = db.query(Product).filter(
+        Product.store_id == store.id,
+        Product.is_active == True
+    ).order_by(desc(Product.created_at))
+    
+    # Пагинация
+    total = query.count()
+    products = query.offset((page - 1) * per_page).limit(per_page).all()
+    
+    # Преобразование в ProductBrief
+    products_brief = []
+    for product in products:
+        product_data = {
+            "id": product.id,
+            "name": product.name,
+            "price": product.price,
+            "original_price": product.original_price,
+            "rating": product.rating,
+            "image_urls": product.image_urls,
+            "discount_percentage": product.discount_percentage,
+            "is_in_stock": product.is_in_stock,
+            "store": {
+                "id": store.id,
+                "name": store.name,
+                "city": store.city,
+                "logo_url": store.logo_url,
+                "rating": store.rating
+            }
+        }
+        products_brief.append(ProductBrief(**product_data))
+    
+    return ProductListResponse(
+        products=products_brief,
+        total=total,
+        page=page,
+        per_page=per_page,
+        filters={"store_name": store_name}
+    )
+
+
 @router.post("/", response_model=StoreResponse)
 async def create_store(
     store_data: StoreCreate,

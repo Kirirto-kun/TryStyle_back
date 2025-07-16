@@ -613,32 +613,87 @@ async def create_product_from_photos(
         uploaded_image_urls = await asyncio.gather(*upload_tasks)
         logger.info(f"Successfully uploaded {len(uploaded_image_urls)} images to Firebase")
         
-        # 2. Анализируем первое изображение через GPT Azure
-        analysis = await analyze_image(uploaded_image_urls[0])
-        logger.info(f"GPT analysis completed: {analysis}")
+        # 2. Анализируем ВСЕ изображения параллельно через GPT Azure
+        logger.info(f"Analyzing {len(uploaded_image_urls)} images for comprehensive features extraction")
+        analysis_tasks = [analyze_image(image_url) for image_url in uploaded_image_urls]
+        all_analyses = await asyncio.gather(*analysis_tasks, return_exceptions=True)
         
-        # 3. Определяем название товара
+        # 3. Обрабатываем результаты анализа всех изображений
+        all_features = []
+        all_names = []
+        all_categories = []
+        successful_analyses = 0
+        
+        for i, analysis in enumerate(all_analyses):
+            if isinstance(analysis, Exception):
+                logger.error(f"Error analyzing image {i+1}: {analysis}")
+                continue
+                
+            successful_analyses += 1
+            logger.info(f"Analysis {i+1} completed: {analysis}")
+            
+            # Собираем названия для выбора лучшего
+            if analysis.get("name"):
+                all_names.append(analysis["name"])
+            
+            # Собираем категории
+            if analysis.get("category"):
+                all_categories.append(analysis["category"])
+            
+            # Собираем features из всех изображений
+            image_features = analysis.get("features", [])
+            if image_features:
+                all_features.extend([f for f in image_features if f is not None and isinstance(f, str)])
+        
+        logger.info(f"Successfully analyzed {successful_analyses}/{len(uploaded_image_urls)} images")
+        
+        # 4. Убираем дубликаты features, сохраняя порядок
+        unique_features = []
+        seen_features = set()
+        for feature in all_features:
+            feature_lower = feature.lower()
+            if feature_lower not in seen_features:
+                unique_features.append(feature)
+                seen_features.add(feature_lower)
+        
+        logger.info(f"Combined {len(all_features)} features into {len(unique_features)} unique features")
+        
+        # 5. Определяем название товара
         if upload_data.name:
             # Используем название от фронтенда (приоритет)
             product_name = upload_data.name
             logger.info(f"Using name from frontend: {product_name}")
         else:
-            # Используем название от GPT
-            product_name = analysis.get("name", "Новый товар")
-            logger.info(f"Using GPT generated name: {product_name}")
+            # Выбираем самое подробное название из анализов
+            if all_names:
+                product_name = max(all_names, key=len)  # Самое подробное описание
+                logger.info(f"Using most detailed GPT name: {product_name}")
+            else:
+                product_name = "Новый товар"
+                logger.info("Using fallback name: Новый товар")
         
-        # 4. Фильтруем features от GPT (убираем None значения)
-        features = [f for f in analysis.get("features", []) if f is not None and isinstance(f, str)]
+        # 6. Определяем категорию (берем наиболее частую)
+        if all_categories:
+            from collections import Counter
+            category_counts = Counter(all_categories)
+            final_category = category_counts.most_common(1)[0][0]
+            logger.info(f"Selected category: {final_category} (appeared {category_counts[final_category]} times)")
+        else:
+            final_category = "other"
+            logger.info("Using fallback category: other")
         
-        # 5. Создаем товар в базе данных
+        # 7. Финальные features (уже уникальные)
+        features = unique_features
+        
+        # 8. Создаем товар в базе данных
         product_data = {
             "name": product_name,
-            "description": f"Товар добавлен через фото. {analysis.get('description', '')}".strip(),
+            "description": f"Товар добавлен через анализ {successful_analyses} фото.",
             "price": upload_data.price,
             "original_price": upload_data.original_price,
-            "category": analysis.get("category", "other"),
+            "category": final_category,  # Категория из анализа всех изображений
             "brand": store.name,  # Название магазина как бренд
-            "features": features,  # Характеристики от GPT
+            "features": features,  # Объединенные характеристики из всех фото
             "sizes": upload_data.sizes,  # От фронтенда
             "colors": upload_data.colors,  # От фронтенда
             "image_urls": uploaded_image_urls,  # URL изображений из Firebase
@@ -654,7 +709,7 @@ async def create_product_from_photos(
         
         logger.info(f"Successfully created product: {product.name} (ID: {product.id}) in store {store.name}")
         
-        # 6. Возвращаем полный ответ
+        # 9. Возвращаем полный ответ
         return ProductResponse(
             **product.__dict__,
             price_info=product.price_display,
