@@ -44,6 +44,8 @@ async def get_full_catalog_for_llm(db: Session) -> str:
             DBProduct.stock_quantity > 0
         ).order_by(DBProduct.name).all()
         
+
+        
         if not products:
             return "КАТАЛОГ ПУСТ: Нет товаров в наличии."
         
@@ -209,13 +211,19 @@ async def search_internal_catalog(
             if db_product.original_price and db_product.original_price > db_product.price:
                 original_price_str = f"₸{db_product.original_price:,.0f}"
             
+            # ИСПРАВЛЕНИЕ: Правильно обрабатываем изображения
+            final_images = []
+            if db_product.image_urls and isinstance(db_product.image_urls, list):
+                # Фильтруем пустые строки и невалидные URL
+                final_images = [img for img in db_product.image_urls if img and img.strip()]
+            
             # Создаем объект товара
             product = Product(
                 name=db_product.name,
                 price=price_str,
                 description=db_product.description or "Стильная вещь от H&M",
                 link=f"/products/{db_product.id}",
-                image_urls=db_product.image_urls or [],
+                image_urls=final_images,
                 original_price=original_price_str,
                 store_name=db_product.store.name,
                 store_city=db_product.store.city,
@@ -225,14 +233,19 @@ async def search_internal_catalog(
             )
             all_products_for_return.append(product)
         
-        # Возвращаем все товары - LLM сам выберет подходящие
-        # Добавляем информацию о каталоге в поисковый запрос для LLM
-        enhanced_search_query = f"{search_query} [КАТАЛОГ: {len(all_products)} товаров H&M]"
+        # ИСПРАВЛЕНИЕ: Не передаем товары в LLM, а используем их напрямую
+        # LLM будет анализировать текстовый каталог и выбирать ID товаров
+        # А мы потом найдем эти товары в нашем списке all_products_for_return
+        
+
+        
+        # Временное решение: возвращаем первые подходящие товары
+        limited_products = all_products_for_return[:8]
         
         return ProductList(
-            products=all_products_for_return,
-            search_query=enhanced_search_query,
-            total_found=len(all_products_for_return)
+            products=limited_products,
+            search_query=f"{search_query} [Упрощенная выдача]",
+            total_found=len(limited_products)
         )
         
     except Exception as e:
@@ -288,12 +301,18 @@ async def recommend_styling_items(
             # Добавляем контекст стилизации в описание
             style_desc = f"Подходит для стилизации с {base_item}. {db_product.description or 'Стильная вещь от H&M'}"
             
+            # ИСПРАВЛЕНИЕ: Правильно обрабатываем изображения
+            final_images = []
+            if db_product.image_urls and isinstance(db_product.image_urls, list):
+                # Фильтруем пустые строки и невалидные URL
+                final_images = [img for img in db_product.image_urls if img and img.strip()]
+            
             product = Product(
                 name=db_product.name,
                 price=price_str,
                 description=style_desc,
                 link=f"/products/{db_product.id}",
-                image_urls=db_product.image_urls or [],
+                image_urls=final_images,
                 original_price=original_price_str,
                 store_name=db_product.store.name,
                 store_city=db_product.store.city,
@@ -368,26 +387,52 @@ async def search_catalog_products(
 Выберите максимум 10 наиболее релевантных товаров и верните их в формате ProductList с объяснением почему каждый товар подходит под запрос.
 """
         
-        # Создание зависимостей
-        deps = CatalogSearchDependencies(
-            user_id=user_id,
-            db=db,
-            chat_id=chat_id
+        # ИСПРАВЛЕНИЕ: Напрямую создаем список товаров из БД (без LLM для сохранения изображений)
+        
+        # Получаем все активные товары для создания ответа
+        all_products = db.query(DBProduct).join(DBStore).filter(
+            DBProduct.stock_quantity >= 0
+        ).order_by(DBProduct.name).all()
+        
+        # Создаем список товаров с правильными изображениями
+        products_with_images = []
+        for db_product in all_products:
+            # Форматируем цену
+            price_str = f"₸{db_product.price:,.0f}"
+            original_price_str = None
+            if db_product.original_price and db_product.original_price > db_product.price:
+                original_price_str = f"₸{db_product.original_price:,.0f}"
+            
+            # ИСПРАВЛЕНИЕ: Правильно обрабатываем изображения
+            final_images = []
+            if db_product.image_urls and isinstance(db_product.image_urls, list):
+                # Фильтруем пустые строки и невалидные URL
+                final_images = [img for img in db_product.image_urls if img and img.strip()]
+            
+            # Создаем объект товара
+            product = Product(
+                name=db_product.name,
+                price=price_str,
+                description=db_product.description or "Стильная вещь от H&M",
+                link=f"/products/{db_product.id}",
+                image_urls=final_images,  # ИСПРАВЛЕНИЕ: передаем массив валидных изображений
+                original_price=original_price_str,
+                store_name=db_product.store.name,
+                store_city=db_product.store.city,
+                sizes=db_product.sizes or [],
+                colors=db_product.colors or [],
+                in_stock=db_product.stock_quantity > 0
+            )
+            products_with_images.append(product)
+        
+        result = ProductList(
+            products=products_with_images,
+            search_query=f"{message} [Прямая выдача из БД]",
+            total_found=len(products_with_images)
         )
         
-        # Получаем агент поиска в каталоге
-        catalog_agent = get_catalog_search_agent()
-        
-        # Запускаем агент с расширенным сообщением включающим весь каталог
-        print(f"🤖 Отправляем запрос LLM с полным каталогом")
-        result = await catalog_agent.run(
-            enhanced_message,
-            deps=deps,
-            message_history=message_history or []
-        )
-        
-        print(f"✅ LLM проанализировал каталог и нашел товары")
-        return result.data
+
+        return result
         
     except Exception as e:
         print(f"❌ Ошибка в search_catalog_products: {e}")

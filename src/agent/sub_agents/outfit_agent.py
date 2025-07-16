@@ -4,6 +4,8 @@ from typing import List
 from .base import get_azure_llm, Outfit, OutfitItem
 from src.database import get_db_session
 from src.models.clothing import ClothingItem
+from src.models.product import Product as DBProduct
+from src.models.store import Store as DBStore
 from pydantic_ai.messages import ModelMessage
 
 
@@ -88,6 +90,90 @@ class WardrobeManager:
                 {"status": "error", "message": "An error occurred while fetching the wardrobe."}
             )
 
+    def get_catalog_items(self) -> str:
+        """
+        Retrieves catalog items from the store when user wardrobe is empty.
+        Converts Product objects to clothing-like format with correct image URLs.
+        """
+        print(f"Fetching catalog items for outfit recommendations")
+        try:
+            # Импортируем все модели для избежания ошибок SQLAlchemy
+            from src.models.review import Review
+            from src.models.user import User
+            from src.models.clothing import ClothingItem
+            from src.models.chat import Chat, Message
+            from src.models.tryon import TryOn
+            from src.models.waitlist import WaitListItem
+            
+            # Получаем активные товары из каталога
+            products = self.db.query(DBProduct).join(DBStore).filter(
+                DBProduct.is_active == True,
+                DBProduct.stock_quantity > 0
+            ).order_by(DBProduct.name).all()
+
+            if not products:
+                return json.dumps({
+                    "status": "success",
+                    "catalog": [],
+                    "total_items": 0,
+                    "message": "No catalog items available."
+                })
+
+            # Конвертируем товары каталога в формат для образов
+            catalog_items = []
+            categories = {}
+            
+            for product in products:
+                # ИСПРАВЛЕНИЕ: Правильно обрабатываем изображения из каталога
+                image_url = ""
+                if product.image_urls and isinstance(product.image_urls, list):
+                    # Берем первое валидное изображение
+                    valid_images = [img for img in product.image_urls if img and img.strip()]
+                    if valid_images:
+                        image_url = valid_images[0]
+                
+                # Мапируем категории товаров к категориям одежды
+                category_mapping = {
+                    "Рубашки": "Tops",
+                    "Футболки": "Tops", 
+                    "Джемперы": "Tops",
+                    "Толстовки": "Tops",
+                    "Брюки": "Bottoms",
+                    "Шорты": "Bottoms",
+                    "Джинсы": "Bottoms",
+                    "Куртки": "Outerwear",
+                    "Спорт": "Activewear",
+                    "Майки": "Activewear"
+                }
+                outfit_category = category_mapping.get(product.category, "Tops")
+                
+                item_data = {
+                    "name": product.name,
+                    "image_url": image_url,  # ИСПРАВЛЕНИЕ: Передаем валидный URL изображения
+                    "category": outfit_category,
+                    "features": product.features or [],
+                    "price": f"₸{product.price:,.0f}",
+                    "store": f"{product.store.name}, {product.store.city}"
+                }
+                catalog_items.append(item_data)
+                
+                # Count by category for better outfit planning
+                categories[outfit_category] = categories.get(outfit_category, 0) + 1
+
+            return json.dumps({
+                "status": "success",
+                "catalog": catalog_items,
+                "total_items": len(catalog_items),
+                "categories": categories,
+                "message": f"Found {len(catalog_items)} catalog items across {len(categories)} categories for outfit recommendations."
+            })
+            
+        except Exception as e:
+            print(f"An error occurred in get_catalog_items: {e}")
+            return json.dumps(
+                {"status": "error", "message": "An error occurred while fetching catalog items."}
+            )
+
 
 def create_outfit_agent(user_id: int, db_session=None) -> Agent:
     """
@@ -131,10 +217,10 @@ STRUCTURED OUTPUT REQUIREMENTS:
 - occasion: Must be one of: casual, formal, business, evening, sport, weekend, date, work
 
 CONTEXTUAL OUTFIT CREATION PROCESS:
-1. Use get_user_wardrobe tool to access user's clothing items
-2. Analyze conversation history for style preferences and feedback
-3. Consider previous outfit recommendations and user reactions
-4. Create outfits that incorporate learned preferences and address previous feedback
+1. First, use get_user_wardrobe tool to check user's clothing items
+2. If wardrobe is empty or insufficient, use get_catalog_items tool to access store catalog
+3. Analyze conversation history for style preferences and feedback
+4. Create outfits from available items (wardrobe or catalog)
 5. Balance user's stated preferences with styling best practices
 6. Provide clear styling rationale that references context when relevant
 
@@ -145,13 +231,18 @@ PREFERENCE LEARNING:
 - Comfort preferences: Remember if user values comfort over style or vice versa
 - Accessory preferences: Note if user likes minimal or statement accessories
 
-VALIDATION RULES:
-- If wardrobe is empty: return empty items array with helpful message
-- Only use items that actually exist in the user's wardrobe
+UPDATED VALIDATION RULES:
+- If wardrobe is empty: use catalog items to create outfit recommendations
+- Prioritize user's wardrobe items when available, supplement with catalog if needed
 - Ensure outfit items have valid categories: Tops, Bottoms, Outerwear, Footwear, Accessories, Dresses, Activewear
 - All text fields must meet length requirements (no empty or too long content)
 - Each outfit should be practical and stylistically coherent
-- Consider conversation context when selecting items and providing reasoning
+- CRITICAL: Always include valid image_url for each OutfitItem (never use empty strings)
+
+IMAGE URL REQUIREMENTS:
+- Every OutfitItem MUST have a valid, non-empty image_url
+- Use the image_url provided in wardrobe or catalog data
+- If no image_url available, skip that item rather than using empty string
 
 CONTEXTUAL EXAMPLES:
 - If user said previous outfit was "too formal", suggest more casual alternatives
@@ -171,7 +262,7 @@ ERROR HANDLING:
 - Provide helpful suggestions when items are limited
 - Use appropriate occasion classification
 - Reference conversation context in reasoning when relevant""",
-        tools=[wardrobe_manager.get_user_wardrobe],
+        tools=[wardrobe_manager.get_user_wardrobe, wardrobe_manager.get_catalog_items],
         retries=5  # Increased retries for better reliability
     )
 
@@ -201,6 +292,11 @@ ERROR HANDLING:
             
             # Ensure item name is not empty
             if not item.name or not item.name.strip():
+                continue
+            
+            # КРИТИЧЕСКАЯ ВАЛИДАЦИЯ: image_url не должен быть пустым
+            if not item.image_url or not item.image_url.strip():
+                print(f"⚠️  Пропускаем товар '{item.name}' - пустой image_url")
                 continue
                 
             validated_items.append(item)
