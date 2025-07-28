@@ -1,8 +1,8 @@
-"""Добавить таблицы stores, products и reviews
+"""Initial migration - create all tables
 
-Revision ID: f35e6348eb3c
-Revises: 9b1348672577
-Create Date: 2025-06-30 11:49:21.132830
+Revision ID: 0d2e68ef262f
+Revises: 
+Create Date: 2025-07-28 14:37:17.863050
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f35e6348eb3c'
-down_revision: Union[str, None] = '9b1348672577'
+revision: str = '0d2e68ef262f'
+down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -45,6 +45,7 @@ def upgrade() -> None:
     sa.Column('sizes', sa.JSON(), nullable=True),
     sa.Column('colors', sa.JSON(), nullable=True),
     sa.Column('image_urls', sa.JSON(), nullable=True),
+    sa.Column('features', sa.JSON(), nullable=True),
     sa.Column('category', sa.String(length=50), nullable=False),
     sa.Column('brand', sa.String(length=100), nullable=True),
     sa.Column('rating', sa.Float(), nullable=True),
@@ -65,6 +66,46 @@ def upgrade() -> None:
     op.create_index(op.f('ix_products_name'), 'products', ['name'], unique=False)
     op.create_index(op.f('ix_products_price'), 'products', ['price'], unique=False)
     op.create_index(op.f('ix_products_store_id'), 'products', ['store_id'], unique=False)
+    op.create_table('users',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('email', sa.String(), nullable=True),
+    sa.Column('username', sa.String(), nullable=True),
+    sa.Column('hashed_password', sa.String(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=True),
+    sa.Column('role', sa.Enum('USER', 'STORE_ADMIN', 'ADMIN', name='userrole'), nullable=False),
+    sa.Column('store_id', sa.Integer(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('phone', sa.String(length=20), nullable=True),
+    sa.ForeignKeyConstraint(['store_id'], ['stores.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
+    op.create_index(op.f('ix_users_id'), 'users', ['id'], unique=False)
+    op.create_index(op.f('ix_users_role'), 'users', ['role'], unique=False)
+    op.create_index(op.f('ix_users_store_id'), 'users', ['store_id'], unique=False)
+    op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
+    op.create_table('chats',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('title', sa.String(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_chats_id'), 'chats', ['id'], unique=False)
+    op.create_table('clothing_items',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('name', sa.String(), nullable=False),
+    sa.Column('image_url', sa.String(), nullable=False),
+    sa.Column('category', sa.String(), nullable=False),
+    sa.Column('features', sa.ARRAY(sa.String()), nullable=True),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_clothing_items_id'), 'clothing_items', ['id'], unique=False)
     op.create_table('reviews',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('rating', sa.Integer(), nullable=False),
@@ -81,16 +122,65 @@ def upgrade() -> None:
     op.create_index(op.f('ix_reviews_id'), 'reviews', ['id'], unique=False)
     op.create_index(op.f('ix_reviews_product_id'), 'reviews', ['product_id'], unique=False)
     op.create_index(op.f('ix_reviews_user_id'), 'reviews', ['user_id'], unique=False)
+    op.create_table('tryons',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('clothing_image_url', sa.String(), nullable=False),
+    sa.Column('human_image_url', sa.String(), nullable=False),
+    sa.Column('result_url', sa.String(), nullable=True),
+    sa.Column('status', sa.String(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_tryons_id'), 'tryons', ['id'], unique=False)
+    op.create_table('waitlist_items',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('image_url', sa.String(), nullable=False),
+    sa.Column('try_on_url', sa.String(), nullable=True),
+    sa.Column('status', sa.String(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_waitlist_items_id'), 'waitlist_items', ['id'], unique=False)
+    op.create_table('messages',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('content', sa.Text(), nullable=False),
+    sa.Column('role', sa.String(), nullable=False),
+    sa.Column('chat_id', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.ForeignKeyConstraint(['chat_id'], ['chats.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_messages_id'), 'messages', ['id'], unique=False)
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_index(op.f('ix_messages_id'), table_name='messages')
+    op.drop_table('messages')
+    op.drop_index(op.f('ix_waitlist_items_id'), table_name='waitlist_items')
+    op.drop_table('waitlist_items')
+    op.drop_index(op.f('ix_tryons_id'), table_name='tryons')
+    op.drop_table('tryons')
     op.drop_index(op.f('ix_reviews_user_id'), table_name='reviews')
     op.drop_index(op.f('ix_reviews_product_id'), table_name='reviews')
     op.drop_index(op.f('ix_reviews_id'), table_name='reviews')
     op.drop_table('reviews')
+    op.drop_index(op.f('ix_clothing_items_id'), table_name='clothing_items')
+    op.drop_table('clothing_items')
+    op.drop_index(op.f('ix_chats_id'), table_name='chats')
+    op.drop_table('chats')
+    op.drop_index(op.f('ix_users_username'), table_name='users')
+    op.drop_index(op.f('ix_users_store_id'), table_name='users')
+    op.drop_index(op.f('ix_users_role'), table_name='users')
+    op.drop_index(op.f('ix_users_id'), table_name='users')
+    op.drop_index(op.f('ix_users_email'), table_name='users')
+    op.drop_table('users')
     op.drop_index(op.f('ix_products_store_id'), table_name='products')
     op.drop_index(op.f('ix_products_price'), table_name='products')
     op.drop_index(op.f('ix_products_name'), table_name='products')

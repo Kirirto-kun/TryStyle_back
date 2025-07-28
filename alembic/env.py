@@ -16,14 +16,8 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # Import your models
 from src.database import Base
-from src.models.user import User
-from src.models.clothing import ClothingItem
-from src.models.chat import Chat, Message
-from src.models.waitlist import WaitListItem
-from src.models.tryon import TryOn
-from src.models.store import Store
-from src.models.product import Product
-from src.models.review import Review
+# Import all models through the models package to ensure they're registered
+import src.models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
