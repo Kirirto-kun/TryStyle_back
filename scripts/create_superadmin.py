@@ -213,7 +213,9 @@ def main():
     
     # Создаем суперадмина с указанными данными
     print("\n🔧 Создание суперадмина с указанными данными...")
-    
+    email = "jafar@gmail.com"
+    username = "jafar"
+    password = "AlmatyJafar2900331!"
     
     success = create_superadmin(email, username, password)
     

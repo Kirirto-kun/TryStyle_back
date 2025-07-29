@@ -425,6 +425,8 @@ async def search_catalog_products(
             )
             products_with_images.append(product)
         
+        print(f"📊 Создаем ProductList с {len(products_with_images)} товарами")
+        
         result = ProductList(
             products=products_with_images,
             search_query=f"{message} [Прямая выдача из БД]",

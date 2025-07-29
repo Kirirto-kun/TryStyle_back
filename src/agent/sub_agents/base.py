@@ -118,8 +118,8 @@ class ProductList(BaseModel):
     products: List[Product] = Field(
         ..., 
         min_items=0,
-        max_items=50,
-        description="List of found products (0-50 items max to include full catalog for LLM analysis)"
+        max_items=500,
+        description="List of found products (0-500 items max to include full catalog for LLM analysis)"
     )
     search_query: str = Field(
         default="",

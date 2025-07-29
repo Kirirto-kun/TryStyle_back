@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
     logger.info("Запуск ClosetMind API...")
     
     # Запускаем скрапер в фоновом режиме
-    asyncio.create_task(run_qazaq_scraper())
+    # asyncio.create_task(run_qazaq_scraper())
     
     yield
     
