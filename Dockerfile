@@ -57,11 +57,18 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy scraper requirements and install them
+COPY scraper_requirements.txt .
+RUN pip install --no-cache-dir -r scraper_requirements.txt
+
 # Copy application code and migration files
 COPY src/ ./src
 COPY alembic/ ./alembic
 COPY alembic.ini ./
 
+# Copy scraper script
+COPY qazaq_republic_scraper.py ./
+COPY clear_qazaq_products.py ./
 # Set proper permissions
 RUN chown -R appuser:appuser /code
 
